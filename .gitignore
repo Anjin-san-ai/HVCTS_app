@@ -21,6 +21,9 @@ deploy-stage
 .env.local
 .env.*.local
 
+# One-off secret handoff file — delete once pasted into GitHub
+azure-secrets.local.txt
+
 # Editor directories and files
 .vscode/*
 !.vscode/extensions.json
