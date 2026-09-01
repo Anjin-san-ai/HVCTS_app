@@ -119,14 +119,20 @@ jobs:
       webapp_url: https://${{ vars.AZURE_WEBAPP_NAME }}.azurewebsites.net
 
   # ─── Fail the run (and page whoever's watching) if the API isn't actually
-  # healthy after deploy, rather than reporting green on a broken API. ────
+  # healthy after deploy, rather than reporting green on a broken API.
+  #
+  # Hits the SWA-proxied path, not the App Service URL directly: the
+  # linked-backend deployment automatically enables App Service
+  # authentication scoped to this Static Web App only (identityProviders.
+  # azureStaticWebApps), so the App Service now correctly rejects direct
+  # calls with 401 — that's a platform security feature, not a bug. ────
   smoke:
     name: Smoke test
-    needs: deploy-api
+    needs: [deploy-web, deploy-api]
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
         with:
           node-version: ${{ env.NODE_VERSION }}
-      - run: node scripts/smoke.mjs "${{ needs.deploy-api.outputs.webapp_url }}/api/ai/health" 180
+      - run: node scripts/smoke.mjs "${{ needs.deploy-web.outputs.static_web_app_url }}/api/ai/health" 180

@@ -9,8 +9,8 @@ subscription `39e308a1-574e-4274-9265-786b64c6e5a0`), resource group
 | Resource | Value |
 |---|---|
 | Web (use this) | `https://salmon-bush-0be50d503.3.azurestaticapps.net` |
-| API (direct) | `https://hvcts-dev-api-st7getqn34vl6.azurewebsites.net` |
-| API health | `https://hvcts-dev-api-st7getqn34vl6.azurewebsites.net/api/ai/health` |
+| API (direct — now blocked, see below) | `https://hvcts-dev-api-st7getqn34vl6.azurewebsites.net` |
+| API health (via the SWA proxy) | `https://salmon-bush-0be50d503.3.azurestaticapps.net/api/ai/health` |
 
 **Entra ID sign-in is not configured** — this account's directory role
 couldn't create the app registration (see "Deploying without Entra
@@ -18,6 +18,38 @@ sign-in"). Until `ENTRA_TENANT_ID` is set, pushes to `main` deploy a
 **public** site whose `/api/ai/*` endpoints anyone can call. GitHub Actions
 also authenticates to the API with a **publish profile**, not OIDC, for the
 same directory-permission reason — see "Deploying without OIDC" below.
+
+**The `linkedBackends` deployment auto-locks the App Service to the SWA.**
+Deploying a `staticSites/linkedBackends` resource makes Azure automatically
+turn on App Service platform authentication (`authsettingsV2`,
+`globalValidation.requireAuthentication: true`) with an `azureStaticWebApps`
+identity provider scoped to exactly that one Static Web App. This isn't
+something `infra/main.bicep`/`main.json` configures explicitly — Azure adds
+it as a side effect of the link. Confirmed by testing directly:
+
+```bash
+curl -i https://hvcts-dev-api-st7getqn34vl6.azurewebsites.net/api/ai/health
+# HTTP/1.1 401 Unauthorized
+# WWW-Authenticate: Bearer realm="hvcts-dev-api-st7getqn34vl6.azurewebsites.net"
+```
+
+That 401 is Azure's platform, not this app's code — it happens before
+Express runs. It's a stronger, free version of the "reject non-SWA
+traffic" control `server/security.ts`'s `requireSwaPrincipal` was written
+to provide.
+
+That middleware can't require an `x-ms-client-principal` header at all,
+confirmed by testing: Static Web Apps only attaches it when the site has
+sign-in configured (`ENTRA_TENANT_ID` set). In the public/no-sign-in
+fallback the header is **absent entirely**, not present-with-role-anonymous
+as the initial version of this code assumed — that first version 401'd
+every request in public mode, including the health check. The middleware
+now only rejects the one meaningful contradiction it can detect: a
+principal that IS present but lacks the `authenticated` role, which would
+mean something bypassed the Static Web Apps edge role-gate while still
+passing Azure's own linked-backend check above. Anything that needs the
+health check or the AI endpoints — including CI's `smoke` job — must go
+through the SWA-proxied path, not the App Service hostname directly.
 
 ## Architecture
 

@@ -70,13 +70,29 @@ export function decodeSwaPrincipal(req: Request): SwaPrincipal | null {
 const REQUIRE_SWA_AUTH = process.env.REQUIRE_SWA_AUTH === 'true';
 
 /**
- * Reject requests that did not arrive via an authenticated Static Web Apps
- * session. This is what stops someone bypassing the SPA's sign-in gate by
- * calling `https://<api>.azurewebsites.net/api/ai/*` directly.
+ * The real boundary against bypassing the SPA and calling
+ * `https://<api>.azurewebsites.net/api/ai/*` directly is Azure itself:
+ * deploying a `staticSites/linkedBackends` resource automatically enables
+ * App Service platform authentication (the `azureStaticWebApps` identity
+ * provider, scoped to that one Static Web App) — confirmed by testing,
+ * that 401s before this code ever runs. See docs/DEPLOYMENT.md.
  *
- * The App Service hostname stays publicly resolvable, so this is an
- * application-layer control, not a network one — see docs/DEPLOYMENT.md for
- * the optional access-restriction hardening.
+ * This middleware is a secondary, app-layer check, and can only reject —
+ * never require — based on `x-ms-client-principal`, because that header's
+ * presence differs by deployment mode, confirmed by testing against the
+ * live site:
+ *   - Entra sign-in OFF (the "public" fallback in docs/DEPLOYMENT.md —
+ *     see scripts/prepare-swa-config.mjs): Static Web Apps does not attach
+ *     the header at all. Blocking on its absence would lock out that
+ *     entire mode, which is public by design.
+ *   - Entra sign-in ON: staticwebapp.config.json's `allowedRoles` already
+ *     redirects unauthenticated visitors to sign in at the Static Web
+ *     Apps edge, before the request is ever proxied here — so a request
+ *     that reaches this point and DOES carry a principal is expected to
+ *     have the `authenticated` role. Reject only that specific
+ *     contradiction (principal present, role missing), since it implies
+ *     something bypassed the edge gate while still passing Azure's own
+ *     linked-backend check above.
  */
 export const requireSwaPrincipal: RequestHandler = (req, res, next) => {
   const principal = decodeSwaPrincipal(req);
@@ -90,7 +106,7 @@ export const requireSwaPrincipal: RequestHandler = (req, res, next) => {
     return;
   }
 
-  if (!principal || !principal.userRoles.includes('authenticated')) {
+  if (principal && !principal.userRoles.includes('authenticated')) {
     res.status(401).json({
       success: false,
       error: 'Unauthorised',
