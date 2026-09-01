@@ -1,0 +1,210 @@
+{
+  "$schema": "https://schema.management.azure.com/schemas/2019-04-01/deploymentTemplate.json#",
+  "contentVersion": "1.0.0.0",
+  "metadata": {
+    "_generator": {
+      "name": "hand-authored ARM equivalent of infra/main.bicep",
+      "reason": "Bicep CLI could not be installed on the machine running setup-azure.sh (corporate network blocks binary downloads from GitHub/ghcr release assets). Keep this file in sync with main.bicep if you edit either."
+    }
+  },
+  "parameters": {
+    "namePrefix": {
+      "type": "string",
+      "defaultValue": "hvcts",
+      "minLength": 3,
+      "maxLength": 10,
+      "metadata": { "description": "Short name prefix for all resources." }
+    },
+    "env": {
+      "type": "string",
+      "defaultValue": "dev",
+      "allowedValues": ["dev", "test", "demo", "prod"],
+      "metadata": { "description": "Environment discriminator." }
+    },
+    "apiLocation": {
+      "type": "string",
+      "defaultValue": "uksouth",
+      "metadata": { "description": "Region for the App Service and Application Insights." }
+    },
+    "swaLocation": {
+      "type": "string",
+      "defaultValue": "westeurope",
+      "allowedValues": ["westeurope", "northeurope", "eastus2", "centralus", "westus2", "eastasia"],
+      "metadata": { "description": "Region for the Static Web App." }
+    },
+    "appServicePlanSku": {
+      "type": "string",
+      "defaultValue": "B1",
+      "metadata": { "description": "App Service plan SKU." }
+    },
+    "azureOpenAiEndpoint": {
+      "type": "string",
+      "metadata": { "description": "Azure OpenAI endpoint." }
+    },
+    "azureOpenAiApiVersion": {
+      "type": "string",
+      "metadata": { "description": "Azure OpenAI API version." }
+    },
+    "azureOpenAiDeploymentName": {
+      "type": "string",
+      "metadata": { "description": "Azure OpenAI chat deployment name." }
+    },
+    "azureOpenAiApiKey": {
+      "type": "securestring",
+      "metadata": { "description": "Azure OpenAI API key." }
+    },
+    "azureOpenAiSupportsTemperature": {
+      "type": "bool",
+      "defaultValue": false,
+      "metadata": { "description": "Set true only for deployments that accept a non-default temperature." }
+    }
+  },
+  "variables": {
+    "suffix": "[uniqueString(resourceGroup().id)]",
+    "planName": "[format('{0}-{1}-plan', parameters('namePrefix'), parameters('env'))]",
+    "apiName": "[format('{0}-{1}-api-{2}', parameters('namePrefix'), parameters('env'), variables('suffix'))]",
+    "swaName": "[format('{0}-{1}-web', parameters('namePrefix'), parameters('env'))]",
+    "insightsName": "[format('{0}-{1}-insights', parameters('namePrefix'), parameters('env'))]",
+    "workspaceName": "[format('{0}-{1}-logs', parameters('namePrefix'), parameters('env'))]",
+    "tags": {
+      "project": "HVCTS",
+      "environment": "[parameters('env')]",
+      "classification": "OFFICIAL-SENSITIVE",
+      "managedBy": "infra/main.json"
+    }
+  },
+  "resources": [
+    {
+      "type": "Microsoft.OperationalInsights/workspaces",
+      "apiVersion": "2023-09-01",
+      "name": "[variables('workspaceName')]",
+      "location": "[parameters('apiLocation')]",
+      "tags": "[variables('tags')]",
+      "properties": {
+        "sku": { "name": "PerGB2018" },
+        "retentionInDays": 30
+      }
+    },
+    {
+      "type": "Microsoft.Insights/components",
+      "apiVersion": "2020-02-02",
+      "name": "[variables('insightsName')]",
+      "location": "[parameters('apiLocation')]",
+      "tags": "[variables('tags')]",
+      "kind": "web",
+      "dependsOn": [
+        "[resourceId('Microsoft.OperationalInsights/workspaces', variables('workspaceName'))]"
+      ],
+      "properties": {
+        "Application_Type": "web",
+        "WorkspaceResourceId": "[resourceId('Microsoft.OperationalInsights/workspaces', variables('workspaceName'))]",
+        "DisableIpMasking": false
+      }
+    },
+    {
+      "type": "Microsoft.Web/serverfarms",
+      "apiVersion": "2023-12-01",
+      "name": "[variables('planName')]",
+      "location": "[parameters('apiLocation')]",
+      "tags": "[variables('tags')]",
+      "sku": { "name": "[parameters('appServicePlanSku')]" },
+      "kind": "linux",
+      "properties": { "reserved": true }
+    },
+    {
+      "type": "Microsoft.Web/sites",
+      "apiVersion": "2023-12-01",
+      "name": "[variables('apiName')]",
+      "location": "[parameters('apiLocation')]",
+      "tags": "[variables('tags')]",
+      "kind": "app,linux",
+      "identity": { "type": "SystemAssigned" },
+      "dependsOn": [
+        "[resourceId('Microsoft.Web/serverfarms', variables('planName'))]",
+        "[resourceId('Microsoft.Insights/components', variables('insightsName'))]"
+      ],
+      "properties": {
+        "serverFarmId": "[resourceId('Microsoft.Web/serverfarms', variables('planName'))]",
+        "httpsOnly": true,
+        "siteConfig": {
+          "linuxFxVersion": "NODE|22-lts",
+          "alwaysOn": true,
+          "http20Enabled": true,
+          "minTlsVersion": "1.2",
+          "ftpsState": "Disabled",
+          "healthCheckPath": "/api/ai/health",
+          "appCommandLine": "node dist-server/index.js",
+          "appSettings": [
+            { "name": "NODE_ENV", "value": "production" },
+            { "name": "SCM_DO_BUILD_DURING_DEPLOYMENT", "value": "false" },
+            { "name": "APPLICATIONINSIGHTS_CONNECTION_STRING", "value": "[reference(resourceId('Microsoft.Insights/components', variables('insightsName')), '2020-02-02').ConnectionString]" },
+            { "name": "AZURE_OPENAI_ENDPOINT", "value": "[parameters('azureOpenAiEndpoint')]" },
+            { "name": "OPENAI_API_VERSION", "value": "[parameters('azureOpenAiApiVersion')]" },
+            { "name": "AZURE_OPENAI_DEPLOYMENT_NAME", "value": "[parameters('azureOpenAiDeploymentName')]" },
+            { "name": "AZURE_OPENAI_API_KEY", "value": "[parameters('azureOpenAiApiKey')]" },
+            { "name": "AZURE_OPENAI_SUPPORTS_TEMPERATURE", "value": "[string(parameters('azureOpenAiSupportsTemperature'))]" },
+            { "name": "REQUIRE_SWA_AUTH", "value": "true" },
+            { "name": "RATE_LIMIT_WINDOW_MS", "value": "300000" },
+            { "name": "RATE_LIMIT_MAX", "value": "30" },
+            { "name": "ALLOWED_ORIGINS", "value": "" }
+          ]
+        }
+      }
+    },
+    {
+      "type": "Microsoft.Web/staticSites",
+      "apiVersion": "2023-12-01",
+      "name": "[variables('swaName')]",
+      "location": "[parameters('swaLocation')]",
+      "tags": "[variables('tags')]",
+      "sku": { "name": "Standard", "tier": "Standard" },
+      "properties": {
+        "allowConfigFileUpdates": true,
+        "stagingEnvironmentPolicy": "Enabled"
+      }
+    },
+    {
+      "type": "Microsoft.Web/staticSites/linkedBackends",
+      "apiVersion": "2023-12-01",
+      "name": "[format('{0}/api', variables('swaName'))]",
+      "dependsOn": [
+        "[resourceId('Microsoft.Web/staticSites', variables('swaName'))]",
+        "[resourceId('Microsoft.Web/sites', variables('apiName'))]"
+      ],
+      "properties": {
+        "backendResourceId": "[resourceId('Microsoft.Web/sites', variables('apiName'))]",
+        "region": "[parameters('apiLocation')]"
+      }
+    }
+  ],
+  "outputs": {
+    "apiName": {
+      "type": "string",
+      "value": "[variables('apiName')]"
+    },
+    "apiUrl": {
+      "type": "string",
+      "value": "[format('https://{0}', reference(resourceId('Microsoft.Web/sites', variables('apiName')), '2023-12-01').defaultHostName)]"
+    },
+    "apiHealthUrl": {
+      "type": "string",
+      "value": "[format('https://{0}/api/ai/health', reference(resourceId('Microsoft.Web/sites', variables('apiName')), '2023-12-01').defaultHostName)]"
+    },
+    "swaName": {
+      "type": "string",
+      "value": "[variables('swaName')]"
+    },
+    "swaUrl": {
+      "type": "string",
+      "value": "[format('https://{0}', reference(resourceId('Microsoft.Web/staticSites', variables('swaName')), '2023-12-01').defaultHostname)]"
+    },
+    "resourceGroupName": {
+      "type": "string",
+      "value": "[resourceGroup().name]"
+    },
+    "linkedBackendName": {
+      "type": "string",
+      "value": "[format('{0}/api', variables('swaName'))]"
+    }
+  }
+}

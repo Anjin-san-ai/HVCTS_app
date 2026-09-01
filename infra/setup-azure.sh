@@ -86,11 +86,13 @@ step "Checking prerequisites"
 command -v az >/dev/null 2>&1 || die "Azure CLI not found. Install: https://aka.ms/InstallAzureCli"
 ok "az $(az version --query '"azure-cli"' -o tsv 2>/dev/null || echo '(version unknown)')"
 
-if ! az bicep version >/dev/null 2>&1; then
-  warn "Bicep CLI not installed — attempting install"
-  az bicep install >/dev/null 2>&1 || die "Could not install Bicep. On a network with TLS inspection this download fails; install manually (https://aka.ms/bicep-install) or run this script elsewhere."
-fi
-ok "bicep present"
+# Deploys infra/main.json (ARM JSON) directly, not infra/main.bicep, so no
+# Bicep CLI is required — useful on networks that block binary downloads
+# from GitHub/ghcr release assets (az bicep install fails there). Keep
+# main.json in sync with main.bicep if you edit either.
+TEMPLATE_FILE="$SCRIPT_DIR/main.json"
+[ -f "$TEMPLATE_FILE" ] || die "$TEMPLATE_FILE not found."
+ok "Using ARM template $TEMPLATE_FILE"
 
 az account show >/dev/null 2>&1 || die "Not signed in. Run: az login"
 
@@ -179,7 +181,7 @@ DEPLOYMENT_NAME="hvcts-$ENVIRONMENT"
 
 set -- \
   --resource-group "$RESOURCE_GROUP" \
-  --template-file "$SCRIPT_DIR/main.bicep" \
+  --template-file "$TEMPLATE_FILE" \
   --parameters "$SCRIPT_DIR/main.parameters.json" \
   --parameters "namePrefix=$NAME_PREFIX" \
   --parameters "env=$ENVIRONMENT" \

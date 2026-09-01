@@ -1,5 +1,24 @@
 # Deploying HVCTS to Azure
 
+## Current deployment
+
+Infrastructure is live in the Cognizant tenant (`cb6887677a-dseidemo-az`,
+subscription `39e308a1-574e-4274-9265-786b64c6e5a0`), resource group
+`rg-hvcts-dev-uks` (`uksouth`):
+
+| Resource | Value |
+|---|---|
+| Web (use this) | `https://salmon-bush-0be50d503.3.azurestaticapps.net` |
+| API (direct) | `https://hvcts-dev-api-st7getqn34vl6.azurewebsites.net` |
+| API health | `https://hvcts-dev-api-st7getqn34vl6.azurewebsites.net/api/ai/health` |
+
+**Entra ID sign-in is not configured** — this account's directory role
+couldn't create the app registration (see "Deploying without Entra
+sign-in"). Until `ENTRA_TENANT_ID` is set, pushes to `main` deploy a
+**public** site whose `/api/ai/*` endpoints anyone can call. GitHub Actions
+also authenticates to the API with a **publish profile**, not OIDC, for the
+same directory-permission reason — see "Deploying without OIDC" below.
+
 ## Architecture
 
 - **Frontend**: Azure Static Web Apps (Standard plan) serving the built SPA
@@ -28,9 +47,15 @@ supports SWA-managed Azure Functions as a backend.
 
 ## First-time setup
 
-1. **Prerequisites**: Azure CLI (`az`) signed in (`az login`), Bicep CLI
-   (`az bicep install` — the setup script does this automatically if it can
-   reach the download over an unrestricted network).
+1. **Prerequisites**: Azure CLI (`az`) signed in (`az login`). No Bicep CLI
+   needed — `setup-azure.sh` deploys `infra/main.json` (ARM JSON) directly.
+   `infra/main.bicep` is kept as the readable source of truth; regenerate
+   `main.json` from it with `az bicep build --file infra/main.bicep --outfile infra/main.json`
+   if you edit the Bicep, on a machine that *can* run the Bicep CLI (`az
+   bicep install` needs to download a binary from GitHub/ghcr release
+   assets — blocked on networks with aggressive proxy filtering, which is
+   why `main.json` was hand-authored instead of generated in this repo's
+   case).
 
 2. Confirm the target subscription:
    ```bash
@@ -47,7 +72,7 @@ supports SWA-managed Azure Functions as a backend.
      `uksouth`).
    - Read the four `AZURE_OPENAI_*` values from your local `.env` if
      present, otherwise prompt for them.
-   - Deploy `infra/main.bicep`: App Service, Static Web App, linked
+   - Deploy `infra/main.json`: App Service, Static Web App, linked
      backend, Application Insights.
    - Try to create an Entra ID app registration for Static Web Apps
      sign-in, and a second one with a GitHub OIDC federated credential for
@@ -84,32 +109,44 @@ Everything else (App Service, Static Web App, linked backend) deploys fine
 without either. See "Deploying without OIDC" and "Deploying without Entra
 sign-in" below for what to do meanwhile.
 
-### Deploying without OIDC
+### Deploying without OIDC (the current default)
 
-If GitHub OIDC federation can't be set up, use a classic publish profile
-for the API job instead:
+`deploy-api` in `.github/workflows/azure-deploy.yml` authenticates with a
+**publish profile**, not OIDC — this Cognizant tenant's directory
+permissions didn't allow creating the app registration OIDC needs, so this
+is what's actually wired up:
 
 ```bash
 az webapp deployment list-publishing-profiles --name <api-name> \
   --resource-group <rg> --xml
 ```
 
-Save the XML as the `AZURE_WEBAPP_PUBLISH_PROFILE` GitHub secret, and in
-`.github/workflows/azure-deploy.yml` replace the `azure/login@v2` step and
-`azure/webapps-deploy@v3`'s `client-id`/`tenant-id`/`subscription-id`
-inputs with:
+The XML goes in the `AZURE_WEBAPP_PUBLISH_PROFILE` GitHub secret. Publish
+profiles are long-lived credentials, not scoped per-repo — rotate them
+periodically from the portal (App Service → Get publish profile → Reset),
+or via the command above (each call issues a fresh one; the old one keeps
+working until rotated).
+
+To switch to OIDC later, once someone with the Application Developer
+directory role creates the two app registrations `infra/setup-azure.sh`
+describes: swap the `deploy-api` job's auth step back to
 
 ```yaml
-- uses: azure/webapps-deploy@v3
-  with:
-    app-name: ${{ vars.AZURE_WEBAPP_NAME }}
-    publish-profile: ${{ secrets.AZURE_WEBAPP_PUBLISH_PROFILE }}
-    package: api.zip
+permissions:
+  id-token: write
+  contents: read
+steps:
+  - uses: azure/login@v2
+    with:
+      client-id: ${{ secrets.AZURE_CLIENT_ID }}
+      tenant-id: ${{ secrets.AZURE_TENANT_ID }}
+      subscription-id: ${{ secrets.AZURE_SUBSCRIPTION_ID }}
+  - uses: azure/webapps-deploy@v3
+    with:
+      app-name: ${{ vars.AZURE_WEBAPP_NAME }}
+      resource-group: ${{ vars.AZURE_RESOURCE_GROUP }}
+      package: api.zip
 ```
-
-Publish profiles are long-lived credentials, not scoped per-repo — rotate
-them periodically from the portal (App Service → Get publish profile →
-Reset).
 
 ### Deploying without Entra sign-in
 
@@ -128,16 +165,17 @@ back down.
 | Secret | Used by | Source |
 |---|---|---|
 | `AZURE_STATIC_WEB_APPS_API_TOKEN` | `deploy-web` | `az staticwebapp secrets list` |
-| `AZURE_CLIENT_ID` | `deploy-api` (OIDC) | The GitHub-OIDC app registration's app id |
-| `AZURE_TENANT_ID` | `deploy-api` (OIDC) | `az account show --query tenantId` |
-| `AZURE_SUBSCRIPTION_ID` | `deploy-api` (OIDC) | `az account show --query id` |
+| `AZURE_WEBAPP_PUBLISH_PROFILE` | `deploy-api` (current default — see "Deploying without OIDC") | `az webapp deployment list-publishing-profiles --xml` |
+| `AZURE_CLIENT_ID` | `deploy-api`, only if switched to OIDC | The GitHub-OIDC app registration's app id |
+| `AZURE_TENANT_ID` | `deploy-api`, only if switched to OIDC | `az account show --query tenantId` |
+| `AZURE_SUBSCRIPTION_ID` | `deploy-api`, only if switched to OIDC | `az account show --query id` |
 
 **Variables** (same location, "Variables" tab):
 
 | Variable | Used by | Source |
 |---|---|---|
-| `AZURE_WEBAPP_NAME` | `deploy-api` | Bicep output `apiName` |
-| `AZURE_RESOURCE_GROUP` | `deploy-api` | The resource group name |
+| `AZURE_WEBAPP_NAME` | `deploy-api` | ARM template output `apiName` |
+| `AZURE_RESOURCE_GROUP` | `deploy-api`, only if switched to OIDC | The resource group name |
 | `ENTRA_TENANT_ID` | `deploy-web` | Set only once Entra sign-in is configured; unset = public deployment |
 
 **Environment**: `deploy-api` runs under the `production` GitHub
@@ -182,8 +220,9 @@ If the $9/month Standard plan isn't approved, you can run the SPA on the
    already reads this variable.
 3. Set `ALLOWED_ORIGINS` on the App Service to the SWA's `*.azurestaticapps.net`
    origin so CORS allows the cross-origin calls.
-4. Drop the SKU in `infra/main.bicep`'s `staticSites` resource to `Free`,
-   and remove the `linkedBackends` resource (Free tier rejects it).
+4. Drop the SKU in `infra/main.bicep` (and `infra/main.json`) `staticSites`
+   resource to `Free`, and remove the `linkedBackends` resource (Free tier
+   rejects it).
 5. Protect the app some other way — Free tier has no custom OIDC provider,
    so Entra sign-in as configured here won't work; either accept a public
    frontend (the API's `REQUIRE_SWA_AUTH` guard becomes moot too, since
