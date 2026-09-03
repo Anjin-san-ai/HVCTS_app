@@ -38,7 +38,8 @@ azure-secrets.local.txt
 # Uncompressed source for server/building-cache.json.gz (regenerate with gzip -9)
 server/building-cache.json
 
-# Playwright MCP session artifacts
+# Playwright MCP session artifacts (snapshots and screenshots land in the
+# repo root). Deliberately not a blanket *.png rule, which would silently
+# swallow legitimate assets under src/assets and public/.
 .playwright-mcp/
-*.png
-!public/**/*.png
+/*.png
