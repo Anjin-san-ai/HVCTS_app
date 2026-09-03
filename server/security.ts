@@ -157,17 +157,18 @@ export function rateLimit({ windowMs = 5 * 60_000, max = 30 }: RateLimitOptions 
 
   // Identify the caller as specifically as the deployment allows.
   //
-  // `req.ip` is not usable here. Behind a Static Web App's linked backend the
-  // request passes through both an SWA edge node and the App Service front
-  // end, so with `trust proxy` set to a fixed hop count Express resolves to
-  // the SWA edge address — and SWA fronts a request from more than one edge.
-  // Measured against the live site, a single client alternated between two
-  // buckets, so the effective budget was a multiple of `max`.
+  // `req.ip` is not usable here: behind a Static Web App's linked backend the
+  // request passes through an SWA edge node before reaching the App Service,
+  // so with `trust proxy` set to a fixed hop count Express resolves to the
+  // SWA edge address rather than the original client.
   //
-  // `x-azure-clientip` is set by the Azure edge and cannot be set by the
-  // caller, so it is preferred. The leftmost `x-forwarded-for` entry is the
-  // conventional fallback but is client-supplied, hence second. `req.ip` is
-  // last and is what local development uses.
+  // Confirmed from the App Service logs for this deployment shape: SWA does
+  // not set `x-azure-clientip`, but does set `x-forwarded-for` to
+  // "client, swa-edge, app-service-frontend" — three entries, client first.
+  // The leftmost entry is technically client-supplied and therefore
+  // spoofable, but the alternative, trusting nothing, is to fall back to
+  // the useless `req.ip`. `x-azure-clientip` is still checked first in case
+  // a future platform hop sets it, since it is edge-set and not spoofable.
   function keyFor(req: Request, res: Response): string {
     const principal = res.locals.swaPrincipal as SwaPrincipal | undefined;
     if (principal?.userId) return principal.userId;
@@ -183,24 +184,6 @@ export function rateLimit({ windowMs = 5 * 60_000, max = 30 }: RateLimitOptions 
     }
 
     return req.ip || 'unknown';
-  }
-
-  // The header shape behind a Static Web Apps linked backend is not
-  // documented clearly, and getting it wrong silently multiplies the budget.
-  // Log it for the first few distinct callers so it can be confirmed from
-  // `az webapp log tail` rather than inferred.
-  const loggedKeys = new Set<string>();
-  function logProxyHeadersOnce(req: Request, key: string) {
-    if (loggedKeys.size >= 10 || loggedKeys.has(key)) return;
-    loggedKeys.add(key);
-    console.log(
-      `[ratelimit] new bucket "${key}" — ` +
-        `x-azure-clientip=${req.get('x-azure-clientip') || '(absent)'} ` +
-        `x-azure-socketip=${req.get('x-azure-socketip') || '(absent)'} ` +
-        `x-forwarded-for=${req.get('x-forwarded-for') || '(absent)'} ` +
-        `x-client-ip=${req.get('x-client-ip') || '(absent)'} ` +
-        `req.ip=${req.ip || '(absent)'}`,
-    );
   }
 
   return (req: Request, res: Response, next: NextFunction) => {
@@ -229,7 +212,6 @@ export function rateLimit({ windowMs = 5 * 60_000, max = 30 }: RateLimitOptions 
     }
 
     const key = keyFor(req, res);
-    logProxyHeadersOnce(req, key);
     let window = windows.get(key);
 
     if (!window || window.resetAt <= now) {
