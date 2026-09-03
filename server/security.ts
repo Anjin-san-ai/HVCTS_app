@@ -138,9 +138,34 @@ export interface RateLimitOptions {
 export function rateLimit({ windowMs = 5 * 60_000, max = 30 }: RateLimitOptions = {}): RequestHandler {
   const windows = new Map<string, Window>();
 
+  // Identify the caller as specifically as the deployment allows.
+  //
+  // `req.ip` is not usable here. Behind a Static Web App's linked backend the
+  // request passes through both an SWA edge node and the App Service front
+  // end, so with `trust proxy` set to a fixed hop count Express resolves to
+  // the SWA edge address — and SWA fronts a request from more than one edge.
+  // Measured against the live site, a single client alternated between two
+  // buckets, so the effective budget was a multiple of `max`.
+  //
+  // `x-azure-clientip` is set by the Azure edge and cannot be set by the
+  // caller, so it is preferred. The leftmost `x-forwarded-for` entry is the
+  // conventional fallback but is client-supplied, hence second. `req.ip` is
+  // last and is what local development uses.
   function keyFor(req: Request, res: Response): string {
     const principal = res.locals.swaPrincipal as SwaPrincipal | undefined;
-    return principal?.userId || req.ip || 'unknown';
+    if (principal?.userId) return principal.userId;
+
+    const azureClientIp = req.get('x-azure-clientip');
+    if (azureClientIp) return azureClientIp.trim();
+
+    const forwarded = req.get('x-forwarded-for');
+    if (forwarded) {
+      // Strip any :port suffix Azure appends, but leave IPv6 addresses alone.
+      const first = forwarded.split(',')[0].trim();
+      return first.includes(':') && first.split(':').length === 2 ? first.split(':')[0] : first;
+    }
+
+    return req.ip || 'unknown';
   }
 
   return (req: Request, res: Response, next: NextFunction) => {

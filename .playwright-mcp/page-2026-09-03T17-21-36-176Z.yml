@@ -1,0 +1,42 @@
+- generic [ref=f1e2]:
+  - generic [ref=f1e3]:
+    - navigation [ref=f1e4]:
+      - generic [ref=f1e5]: CITIZEN JOURNEY
+      - button "1. Start" [ref=f1e6] [cursor=pointer]
+      - button "2. Search" [ref=f1e7] [cursor=pointer]
+      - button "3. Results" [ref=f1e8] [cursor=pointer]
+      - button "4. Property" [ref=f1e9] [cursor=pointer]
+      - button "5. Liability" [ref=f1e10] [cursor=pointer]
+      - button "6. Challenge" [ref=f1e11] [cursor=pointer]
+      - button "7. Evidence" [ref=f1e12] [cursor=pointer]
+      - button "8. Review" [ref=f1e13] [cursor=pointer]
+      - button "9. Confirmed" [ref=f1e14] [cursor=pointer]
+    - navigation [ref=f1e15]:
+      - generic [ref=f1e16]: CASEWORKER
+      - 'button "CW: Dashboard" [ref=f1e17] [cursor=pointer]'
+      - 'button "CW: Case" [ref=f1e18] [cursor=pointer]'
+  - banner [ref=f1e19]:
+    - generic [ref=f1e20]:
+      - generic [ref=f1e21]: GOV.UK
+      - navigation [ref=f1e23]:
+        - link "HVCTS Service" [ref=f1e24] [cursor=pointer]:
+          - /url: /
+  - generic [ref=f1e25]:
+    - generic [ref=f1e26]: PROTOTYPE
+    - text: This is a prototype. Your data will not be saved.
+    - generic [ref=f1e27]: Live API Data
+  - main [ref=f1e29]:
+    - link "◀Back" [ref=f1e30] [cursor=pointer]:
+      - /url: /
+    - generic [ref=f1e32]:
+      - heading "Find a property" [level=1] [ref=f1e33]
+      - paragraph [ref=f1e34]: Search by postcode to find properties on the HVCTS list in England.
+      - generic [ref=f1e35]:
+        - generic [ref=f1e36]: Postcode
+        - text: For example SW1X 8HG or SW7 3NP
+        - textbox "Postcode" [ref=f1e38]: SW1X 8HG
+      - button "Search" [ref=f1e39] [cursor=pointer]
+  - contentinfo [ref=f1e40]:
+    - generic [ref=f1e41]:
+      - paragraph [ref=f1e42]: HVCTS AI-Augmented Prototype — Cognizant × HMRC × VOA
+      - paragraph [ref=f1e43]: Built with GOV.UK Design System patterns. Property data from HM Land Registry. For demonstration purposes only.
