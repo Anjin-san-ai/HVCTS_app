@@ -10,6 +10,11 @@ export function SearchPage() {
   const { searchPostcode, setSearchPostcode, setSearchResults, setIsSearching, setPostcodeInfo } = useAppStore();
   const [postcode, setPostcode] = useState(searchPostcode);
   const [suggestions, setSuggestions] = useState<string[]>([]);
+  // Only ever open the suggestion list in response to typing. The list is
+  // absolutely positioned over the Search button, so leaving it open on mount
+  // (the postcode field has a default value) or re-opening it after a
+  // selection made the button unclickable.
+  const [showSuggestions, setShowSuggestions] = useState(false);
   const [validating, setValidating] = useState(false);
   const [error, setError] = useState('');
   const [postcodeDetail, setPostcodeDetail] = useState<{ district: string; region: string } | null>(null);
@@ -21,11 +26,13 @@ export function SearchPage() {
   }, []);
 
   useEffect(() => {
+    if (!showSuggestions) return;
     const t = setTimeout(() => fetchSuggestions(postcode), 300);
     return () => clearTimeout(t);
-  }, [postcode, fetchSuggestions]);
+  }, [postcode, fetchSuggestions, showSuggestions]);
 
   const handleSearch = async () => {
+    setShowSuggestions(false);
     setError('');
     setValidating(true);
     const info = await lookupPostcode(postcode);
@@ -67,16 +74,19 @@ export function SearchPage() {
                 className="govuk-input"
                 id="postcode"
                 value={postcode}
-                onChange={(e) => setPostcode(e.target.value.toUpperCase())}
+                onChange={(e) => { setShowSuggestions(true); setPostcode(e.target.value.toUpperCase()); }}
                 onKeyDown={(e) => e.key === 'Enter' && handleSearch()}
+                // Suggestions are chosen on mouseDown, which fires before blur,
+                // so closing here does not swallow the selection.
+                onBlur={() => setShowSuggestions(false)}
                 style={{ maxWidth: 250 }}
                 autoComplete="off"
               />
-              {suggestions.length > 0 && (
+              {showSuggestions && suggestions.length > 0 && (
                 <div style={{ position: 'absolute', top: '100%', left: 0, background: 'white', border: '2px solid var(--govuk-black)', width: 250, zIndex: 10 }}>
                   {suggestions.map((s) => (
                     <div key={s} style={{ padding: '8px 10px', cursor: 'pointer', fontSize: 16, borderBottom: '1px solid var(--govuk-light-grey)' }}
-                      onMouseDown={() => { setPostcode(s); setSuggestions([]); }}>
+                      onMouseDown={() => { setPostcode(s); setSuggestions([]); setShowSuggestions(false); }}>
                       {s}
                     </div>
                   ))}
