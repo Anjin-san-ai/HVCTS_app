@@ -130,6 +130,21 @@ interface Window {
   resetAt: number;
 }
 
+/**
+ * Absolute ceiling on AI requests per window across all callers.
+ *
+ * The per-caller limit is only as good as our ability to identify a caller.
+ * Behind a Static Web Apps linked backend the client address is not reliably
+ * visible, so a single client can land in several buckets and receive a
+ * multiple of the per-caller budget. This ceiling is what actually bounds
+ * Azure OpenAI spend on a public deployment, and it needs no client identity
+ * at all. Defaults to 4x the per-caller limit so ordinary use is unaffected.
+ */
+function globalCeiling(max: number): number {
+  const configured = parseInt(process.env.RATE_LIMIT_GLOBAL_MAX || '', 10);
+  return Number.isFinite(configured) && configured > 0 ? configured : max * 4;
+}
+
 export interface RateLimitOptions {
   windowMs?: number;
   max?: number;
@@ -137,6 +152,8 @@ export interface RateLimitOptions {
 
 export function rateLimit({ windowMs = 5 * 60_000, max = 30 }: RateLimitOptions = {}): RequestHandler {
   const windows = new Map<string, Window>();
+  const ceiling = globalCeiling(max);
+  let global: Window = { count: 0, resetAt: Date.now() + windowMs };
 
   // Identify the caller as specifically as the deployment allows.
   //
@@ -168,6 +185,24 @@ export function rateLimit({ windowMs = 5 * 60_000, max = 30 }: RateLimitOptions 
     return req.ip || 'unknown';
   }
 
+  // The header shape behind a Static Web Apps linked backend is not
+  // documented clearly, and getting it wrong silently multiplies the budget.
+  // Log it for the first few distinct callers so it can be confirmed from
+  // `az webapp log tail` rather than inferred.
+  const loggedKeys = new Set<string>();
+  function logProxyHeadersOnce(req: Request, key: string) {
+    if (loggedKeys.size >= 10 || loggedKeys.has(key)) return;
+    loggedKeys.add(key);
+    console.log(
+      `[ratelimit] new bucket "${key}" — ` +
+        `x-azure-clientip=${req.get('x-azure-clientip') || '(absent)'} ` +
+        `x-azure-socketip=${req.get('x-azure-socketip') || '(absent)'} ` +
+        `x-forwarded-for=${req.get('x-forwarded-for') || '(absent)'} ` +
+        `x-client-ip=${req.get('x-client-ip') || '(absent)'} ` +
+        `req.ip=${req.ip || '(absent)'}`,
+    );
+  }
+
   return (req: Request, res: Response, next: NextFunction) => {
     const now = Date.now();
 
@@ -178,7 +213,23 @@ export function rateLimit({ windowMs = 5 * 60_000, max = 30 }: RateLimitOptions 
       }
     }
 
+    // Process-wide ceiling first: it is the guarantee that does not depend on
+    // recognising the caller.
+    if (global.resetAt <= now) global = { count: 0, resetAt: now + windowMs };
+    global.count += 1;
+    if (global.count > ceiling) {
+      const retryAfter = Math.ceil((global.resetAt - now) / 1000);
+      res.setHeader('Retry-After', String(retryAfter));
+      res.status(429).json({
+        success: false,
+        error: 'Service busy',
+        message: `The AI service is at capacity (${ceiling} requests per ${Math.round(windowMs / 60_000)} minutes across all users). Try again shortly.`,
+      });
+      return;
+    }
+
     const key = keyFor(req, res);
+    logProxyHeadersOnce(req, key);
     let window = windows.get(key);
 
     if (!window || window.resetAt <= now) {
