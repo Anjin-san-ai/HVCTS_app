@@ -37,3 +37,8 @@ azure-secrets.local.txt
 
 # Uncompressed source for server/building-cache.json.gz (regenerate with gzip -9)
 server/building-cache.json
+
+# Playwright MCP session artifacts
+.playwright-mcp/
+*.png
+!public/**/*.png
