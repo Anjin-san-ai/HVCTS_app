@@ -58,12 +58,16 @@ export function PropertyMap({ lat, lng, label }: { lat: number; lng: number; lab
 
   useEffect(() => {
     if (!mapRef.current || mapInstance.current) return;
-    const map = L.map(mapRef.current).setView([lat, lng], 16);
-    L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
-      attribution: '&copy; OpenStreetMap contributors',
+    const map = L.map(mapRef.current).setView([lat, lng], 17);
+    L.tileLayer('https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}', {
+      attribution: '&copy; Esri, Maxar',
       maxZoom: 19,
     }).addTo(map);
-    const icon = L.divIcon({ className: '', html: '<div style="width:24px;height:24px;background:#d4351c;border:3px solid white;border-radius:50%;box-shadow:0 2px 6px rgba(0,0,0,0.3);"></div>', iconSize: [24, 24], iconAnchor: [12, 12] });
+    L.tileLayer('https://server.arcgisonline.com/ArcGIS/rest/services/Reference/World_Boundaries_and_Places/MapServer/tile/{z}/{y}/{x}', {
+      maxZoom: 19,
+      pane: 'overlayPane',
+    }).addTo(map);
+    const icon = L.divIcon({ className: '', html: '<div style="width:24px;height:24px;background:#d4351c;border:3px solid white;border-radius:50%;box-shadow:0 2px 8px rgba(0,0,0,0.4);"></div>', iconSize: [24, 24], iconAnchor: [12, 12] });
     const marker = L.marker([lat, lng], { icon }).addTo(map);
     if (label) marker.bindPopup(`<strong>${label}</strong>`).openPopup();
     mapInstance.current = map;

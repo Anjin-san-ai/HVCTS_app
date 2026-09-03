@@ -26,7 +26,7 @@ body {
   background: var(--govuk-white);
   line-height: 1.5;
   -webkit-font-smoothing: antialiased;
-  padding-top: 44px;
+  padding-top: 68px;
 }
 
 a { color: var(--govuk-blue); }
@@ -68,8 +68,7 @@ a:hover { color: #003078; }
 
 /* === Footer === */
 .govuk-footer { background: var(--govuk-light-grey); border-top: 1px solid var(--govuk-mid-grey); padding: 30px 0; margin-top: 60px; }
-.govuk-footer__meta { max-width: none; margin: 0 auto; padding: 0 30px; font-size: 16px; color: var(--govuk-dark-grey); display: flex; justify-content: space-between; align-items: flex-end; gap: 20px; }
-.footer-logo { height: 22px; width: auto; opacity: .85; flex-shrink: 0; }
+.govuk-footer__meta { max-width: none; margin: 0 auto; padding: 0 30px; font-size: 16px; color: var(--govuk-dark-grey); }
 
 /* === Typography === */
 .govuk-heading-xl { font-size: 48px; font-weight: 700; line-height: 1.04; margin-bottom: 30px; }
@@ -169,10 +168,195 @@ a:hover { color: #003078; }
 .govuk-back-link::before { content: "◀"; margin-right: 6px; font-size: 10px; }
 .govuk-back-link:hover { color: var(--govuk-black); text-decoration: underline; }
 
-/* === Prototype Nav === */
-.prototype-nav { position: fixed; top: 0; left: 0; right: 0; z-index: 100; background: #1d4ed8; display: flex; flex-wrap: wrap; gap: 4px; padding: 8px 15px; align-items: center; }
-.prototype-nav__label { color: rgba(255,255,255,0.7); font-size: 12px; margin-right: 8px; font-weight: 600; }
-.prototype-nav__btn { background: rgba(255,255,255,0.15); color: white; border: none; padding: 4px 10px; font-size: 12px; cursor: pointer; font-family: var(--govuk-font); border-radius: 3px; }
+/* === Prototype Nav — dual-persona layout === */
+.prototype-nav-wrapper { position: fixed; top: 0; left: 0; right: 0; z-index: 100; display: flex; flex-direction: column; }
+.prototype-nav { display: flex; flex-wrap: wrap; gap: 4px; padding: 5px 15px; align-items: center; transition: opacity 0.2s; }
+.prototype-nav--citizen { background: #1d4ed8; }
+.prototype-nav--caseworker { background: #003078; }
+.prototype-nav:not(.prototype-nav--current) { opacity: 0.6; }
+.prototype-nav:not(.prototype-nav--current):hover { opacity: 0.85; }
+.prototype-nav__label { color: rgba(255,255,255,0.7); font-size: 11px; margin-right: 8px; font-weight: 700; letter-spacing: 0.04em; min-width: 105px; }
+.prototype-nav__btn { background: rgba(255,255,255,0.13); color: white; border: none; padding: 3px 9px; font-size: 11px; cursor: pointer; font-family: var(--govuk-font); border-radius: 3px; }
 .prototype-nav__btn:hover { background: rgba(255,255,255,0.25); }
 .prototype-nav__btn--active { background: rgba(255,255,255,0.35); font-weight: 700; }
-.prototype-nav__divider { width: 1px; height: 20px; background: rgba(255,255,255,0.3); margin: 0 4px; }
+.prototype-nav__btn--cw { background: rgba(255,255,255,0.15); }
+.prototype-nav__btn--cw.prototype-nav__btn--active { background: rgba(40,161,151,0.5); }
+
+/* === HITL: Decision Audit Bar === */
+.hitl-audit-bar {
+  display: flex; align-items: center; gap: 12px; padding: 8px 16px;
+  background: linear-gradient(135deg, #000048 0%, #173793 100%);
+  border-bottom: 3px solid var(--govuk-focus);
+  margin-bottom: 4px; flex-wrap: wrap;
+}
+.hitl-audit-bar__label {
+  display: flex; align-items: center; gap: 6px;
+  color: #fff; font-size: 11px; font-weight: 700; letter-spacing: 0.08em; text-transform: uppercase;
+  white-space: nowrap;
+}
+.hitl-audit-bar__icon { font-size: 16px; }
+.hitl-audit-bar__count { font-weight: 400; opacity: 0.75; font-size: 11px; margin-left: 4px; }
+.hitl-audit-bar__gates { display: flex; align-items: center; gap: 0; flex: 1; min-width: 0; }
+.hitl-audit-bar__journal-btn {
+  background: rgba(255,255,255,0.15); color: #fff; border: 1px solid rgba(255,255,255,0.3);
+  padding: 4px 10px; font-size: 11px; cursor: pointer; font-family: var(--govuk-font);
+  border-radius: 3px; white-space: nowrap;
+}
+.hitl-audit-bar__journal-btn:hover { background: rgba(255,255,255,0.25); }
+
+/* === HITL: Gate dots === */
+.hitl-gate {
+  display: flex; align-items: center; gap: 4px; cursor: pointer; padding: 2px 4px;
+  transition: transform 0.15s;
+}
+.hitl-gate:hover { transform: scale(1.05); }
+.hitl-gate__dot {
+  width: 26px; height: 26px; border-radius: 50%;
+  display: flex; align-items: center; justify-content: center;
+  font-size: 11px; font-weight: 700; color: #fff;
+  transition: all 0.3s; flex-shrink: 0;
+}
+.hitl-gate--pending .hitl-gate__dot { background: rgba(255,255,255,0.2); border: 2px solid rgba(255,255,255,0.4); color: rgba(255,255,255,0.6); }
+.hitl-gate--approved .hitl-gate__dot { background: var(--govuk-green); border: 2px solid #00a04d; box-shadow: 0 0 8px rgba(0,112,60,0.5); }
+.hitl-gate--overridden .hitl-gate__dot { background: var(--govuk-orange); border: 2px solid #ff8c42; box-shadow: 0 0 8px rgba(244,119,56,0.5); }
+.hitl-gate--rejected .hitl-gate__dot { background: var(--govuk-red); border: 2px solid #ff4444; }
+.hitl-gate__label { font-size: 10px; color: rgba(255,255,255,0.7); white-space: nowrap; max-width: 70px; overflow: hidden; text-overflow: ellipsis; }
+.hitl-gate--approved .hitl-gate__label, .hitl-gate--overridden .hitl-gate__label { color: #fff; }
+.hitl-gate__connector {
+  width: 20px; height: 2px; background: rgba(255,255,255,0.2);
+  margin: 0 2px; flex-shrink: 0;
+}
+.hitl-gate__connector--done { background: var(--govuk-green); }
+
+/* === HITL: Recommendation Card === */
+.hitl-recommendation-card {
+  border: 2px solid #e8e8e8; border-radius: 4px; overflow: hidden;
+  margin: 4px 0; transition: border-color 0.2s;
+}
+.hitl-recommendation-card:hover { border-color: var(--govuk-blue); }
+.hitl-recommendation-card__banner {
+  display: flex; justify-content: space-between; align-items: center;
+  padding: 6px 12px; background: linear-gradient(90deg, #000048 0%, #173793 100%);
+  color: #fff; font-size: 11px; font-weight: 700; letter-spacing: 0.06em;
+}
+.hitl-recommendation-card__model { font-weight: 400; opacity: 0.7; font-size: 10px; }
+
+/* === HITL: Actions (Approve/Override/Reject) === */
+.hitl-actions { padding: 8px 12px; border-top: 1px solid #e8e8e8; }
+.hitl-actions--pending { background: #f8f6ff; }
+.hitl-actions--approved { background: #e6f4ea; }
+.hitl-actions--overridden { background: #fef3e6; }
+.hitl-actions--rejected { background: #fdf0ed; }
+.hitl-actions__label { font-size: 11px; color: var(--govuk-dark-grey); margin-bottom: 6px; font-weight: 600; text-transform: uppercase; letter-spacing: 0.04em; }
+.hitl-actions__buttons { display: flex; gap: 6px; }
+.hitl-actions__btn { font-size: 13px !important; padding: 5px 14px 4px !important; margin: 0 !important; }
+.hitl-actions__stamp {
+  display: flex; align-items: center; gap: 6px;
+  font-size: 13px; font-weight: 700;
+}
+.hitl-actions__stamp-icon { font-size: 16px; }
+.hitl-actions--approved .hitl-actions__stamp { color: var(--govuk-green); }
+.hitl-actions--overridden .hitl-actions__stamp { color: var(--govuk-orange); }
+.hitl-actions--rejected .hitl-actions__stamp { color: var(--govuk-red); }
+.hitl-actions__time { font-weight: 400; font-size: 11px; color: var(--govuk-dark-grey); margin-left: auto; }
+.hitl-actions__override-value { font-size: 12px; color: var(--govuk-black); margin-top: 4px; padding: 4px 8px; background: rgba(244,119,56,0.08); border-left: 3px solid var(--govuk-orange); }
+.hitl-actions__override-reason { font-size: 11px; color: var(--govuk-dark-grey); margin-top: 2px; font-style: italic; }
+.hitl-actions__undo {
+  background: none; border: none; color: var(--govuk-blue); font-size: 11px;
+  cursor: pointer; text-decoration: underline; padding: 0; margin-top: 4px;
+  font-family: var(--govuk-font);
+}
+
+/* === HITL: Override Modal === */
+.hitl-override-modal {
+  position: fixed; inset: 0; z-index: 1000;
+  background: rgba(0,0,0,0.55); display: flex; align-items: center; justify-content: center;
+  animation: hitlFadeIn 0.2s ease;
+}
+.hitl-override-modal__card {
+  background: #fff; width: 520px; max-width: 95vw; border-radius: 0;
+  border-top: 5px solid var(--govuk-orange); box-shadow: 0 10px 40px rgba(0,0,0,0.3);
+}
+.hitl-override-modal__header {
+  display: flex; justify-content: space-between; align-items: center;
+  padding: 14px 18px; border-bottom: 1px solid var(--govuk-mid-grey);
+}
+.hitl-override-modal__header h3 { font-size: 18px; margin: 0; }
+.hitl-override-modal__close {
+  background: none; border: none; font-size: 24px; cursor: pointer; color: var(--govuk-dark-grey);
+  padding: 0; line-height: 1; font-family: var(--govuk-font);
+}
+.hitl-override-modal__body { padding: 18px; }
+.hitl-override-modal__ai-row {
+  display: flex; align-items: flex-start; gap: 8px;
+  padding: 8px 12px; background: var(--govuk-light-grey); border-left: 3px solid var(--govuk-blue);
+  margin-bottom: 14px; font-size: 13px;
+}
+.hitl-override-modal__ai-badge {
+  background: linear-gradient(90deg, #000048, #173793); color: #fff;
+  padding: 2px 8px; font-size: 10px; font-weight: 700; letter-spacing: 0.06em;
+  white-space: nowrap; flex-shrink: 0;
+}
+
+/* === HITL: Override Journal === */
+.hitl-journal { margin-bottom: 24px; }
+.hitl-journal__entries { display: flex; flex-direction: column; gap: 8px; }
+.hitl-journal__entry {
+  border: 1px solid var(--govuk-mid-grey); border-left: 4px solid var(--govuk-orange);
+  background: #fff;
+}
+.hitl-journal__entry-header {
+  display: flex; justify-content: space-between; align-items: center;
+  padding: 8px 12px; background: var(--govuk-light-grey); border-bottom: 1px solid #e8e8e8;
+}
+.hitl-journal__entry-gate { font-size: 14px; font-weight: 700; display: flex; align-items: center; gap: 6px; }
+.hitl-journal__entry-icon { color: var(--govuk-orange); }
+.hitl-journal__entry-time { font-size: 11px; color: var(--govuk-dark-grey); }
+.hitl-journal__entry-body { padding: 10px 12px; }
+.hitl-journal__entry-row { display: flex; gap: 8px; align-items: baseline; margin-bottom: 4px; font-size: 13px; }
+.hitl-journal__entry-label { font-weight: 600; color: var(--govuk-dark-grey); min-width: 130px; font-size: 12px; }
+.hitl-journal__entry-value--ai { color: var(--govuk-blue); }
+.hitl-journal__entry-value--cw { color: var(--govuk-orange); font-weight: 600; }
+.hitl-journal__entry-reason { font-size: 12px; color: var(--govuk-dark-grey); margin-top: 6px; padding-top: 6px; border-top: 1px dashed #e8e8e8; }
+
+/* === HITL: Governance Summary (Timeline tab) === */
+.hitl-governance-summary { margin-bottom: 24px; }
+.hitl-governance-summary__grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 8px; margin-bottom: 14px; }
+.hitl-governance-summary__item {
+  display: flex; align-items: center; gap: 8px; padding: 8px 10px;
+  border: 1px solid #e8e8e8; background: #fff;
+}
+.hitl-governance-summary__item--approved { border-left: 3px solid var(--govuk-green); }
+.hitl-governance-summary__item--overridden { border-left: 3px solid var(--govuk-orange); }
+.hitl-governance-summary__item--rejected { border-left: 3px solid var(--govuk-red); }
+.hitl-governance-summary__item--pending { border-left: 3px solid var(--govuk-mid-grey); opacity: 0.7; }
+.hitl-governance-summary__item-icon { font-size: 18px; flex-shrink: 0; }
+.hitl-governance-summary__item--approved .hitl-governance-summary__item-icon { color: var(--govuk-green); }
+.hitl-governance-summary__item--overridden .hitl-governance-summary__item-icon { color: var(--govuk-orange); }
+.hitl-governance-summary__item--rejected .hitl-governance-summary__item-icon { color: var(--govuk-red); }
+.hitl-governance-summary__item--pending .hitl-governance-summary__item-icon { color: var(--govuk-mid-grey); }
+.hitl-governance-summary__item-label { font-size: 13px; font-weight: 700; }
+.hitl-governance-summary__item-status { font-size: 11px; color: var(--govuk-dark-grey); }
+
+/* === HITL: Governance Readiness Meter === */
+.hitl-governance-summary__meter {
+  display: flex; align-items: center; gap: 10px;
+  padding: 10px 14px; background: var(--govuk-light-grey); border: 1px solid var(--govuk-mid-grey);
+}
+.hitl-governance-summary__meter-label { font-size: 13px; font-weight: 700; white-space: nowrap; }
+.hitl-governance-summary__meter-bar {
+  flex: 1; height: 10px; background: #e8e8e8; border-radius: 5px; overflow: hidden;
+}
+.hitl-governance-summary__meter-fill {
+  height: 100%; background: linear-gradient(90deg, var(--govuk-orange), var(--govuk-green));
+  border-radius: 5px; transition: width 0.5s ease;
+}
+.hitl-governance-summary__meter-pct { font-size: 14px; font-weight: 700; color: var(--govuk-green); min-width: 36px; text-align: right; }
+
+/* === HITL: Gate Warning (Decision tab) === */
+.hitl-gate-warning { margin-bottom: 8px; }
+
+/* === HITL: Animations === */
+@keyframes hitlFadeIn { from { opacity: 0; } to { opacity: 1; } }
+@keyframes hitlPulse { 0%, 100% { box-shadow: 0 0 0 0 rgba(0,112,60,0.4); } 50% { box-shadow: 0 0 0 6px rgba(0,112,60,0); } }
+.hitl-gate--approved .hitl-gate__dot { animation: hitlPulse 2s ease infinite; }

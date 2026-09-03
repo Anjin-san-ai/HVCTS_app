@@ -1,10 +1,12 @@
-import { useState, useEffect, useCallback } from 'react';
+import { useState, useEffect, useCallback, useMemo } from 'react';
 import { useLocation } from 'react-router-dom';
 import { PageLayout } from '../../components/layout';
 import { AiPanel, EvidenceScore, Tag, PropertyMap, formatCurrency, showToast } from '../../components/common';
 import ResearchMap from '../../components/ResearchMap';
+import { AiAssistant } from '../../components/AiAssistant';
+import { RiskRadar } from '../../components/RiskRadar';
 import { CASEWORKER_CASES, BAND_THRESHOLDS } from '../../data/properties';
-import { getComparableSales } from '../../services/api';
+import { getComparableSales, getNearbyTransactions } from '../../services/api';
 import { fetchCaseBrief, fetchResearch, fetchDecision, fetchDecisionLetter } from '../../services/llm';
 import {
   fetchPropertySaleHistory,
@@ -27,9 +29,16 @@ import type {
   PlanningApplication,
   SchoolResult,
 } from '../../services/publicData';
-import type { LandRegistryTransaction } from '../../types';
+import type { CaseworkerCase, LandRegistryTransaction } from '../../types';
 
 type Tab = 'brief' | 'research' | 'evidence' | 'ownership' | 'decision' | 'timeline';
+
+// ─── Human-in-the-Loop (HITL) Types ───
+type GateKey = 'valuation' | 'comparables' | 'ownership' | 'bandAssessment' | 'evidenceReview' | 'finalDecision';
+interface GateState { status: 'pending' | 'approved' | 'overridden' | 'rejected'; aiValue: string; caseworkerValue?: string; reason?: string; timestamp?: string; }
+interface OverrideEntry { gate: string; aiSuggestion: string; caseworkerDecision: string; reason: string; timestamp: string; }
+const GATE_LABELS: Record<GateKey, string> = { valuation: 'Valuation', comparables: 'Comparables', ownership: 'Ownership', bandAssessment: 'Band Assessment', evidenceReview: 'Evidence Review', finalDecision: 'Final Decision' };
+const GATE_ORDER: GateKey[] = ['valuation', 'comparables', 'ownership', 'bandAssessment', 'evidenceReview', 'finalDecision'];
 
 const TABS: { id: Tab; label: string; badge?: (c: typeof CASEWORKER_CASES[0]) => string | null }[] = [
   { id: 'brief', label: 'AI Brief' },
@@ -49,8 +58,9 @@ interface DecisionTrailEntry {
 
 export function CaseDetailPage() {
   const location = useLocation();
-  const caseRef = (location.state as { caseRef?: string })?.caseRef || CASEWORKER_CASES[0].reference;
-  const caseData = CASEWORKER_CASES.find((c) => c.reference === caseRef) || CASEWORKER_CASES[0];
+  const locState = location.state as { caseRef?: string; dynamicCase?: CaseworkerCase } | null;
+  const caseRef = locState?.caseRef || CASEWORKER_CASES[0].reference;
+  const caseData = locState?.dynamicCase || CASEWORKER_CASES.find((c) => c.reference === caseRef) || CASEWORKER_CASES[0];
   const { property } = caseData;
   const fullAddress = `${property.address.line1}, ${property.address.postcode}`;
   const [activeTab, setActiveTab] = useState<Tab>('brief');
@@ -90,9 +100,48 @@ export function CaseDetailPage() {
   const [selectedComparable, setSelectedComparable] = useState<number | null>(null);
   const [decisionTrail, setDecisionTrail] = useState<DecisionTrailEntry[]>([]);
 
-  // UX state — accordion sections + map modal
+  // UX state — accordion sections + map modal + assistant
   const [openSections, setOpenSections] = useState<Set<string>>(new Set(['sales', 'valuation', 'ownership']));
   const [mapModalOpen, setMapModalOpen] = useState(false);
+  const [mapInfoPanel, setMapInfoPanel] = useState(true);
+  const [assistantOpen, setAssistantOpen] = useState(false);
+
+  // HITL — Human-in-the-Loop governance state
+  const [gateStates, setGateStates] = useState<Record<GateKey, GateState>>({
+    valuation: { status: 'pending', aiValue: '' },
+    comparables: { status: 'pending', aiValue: '' },
+    ownership: { status: 'pending', aiValue: '' },
+    bandAssessment: { status: 'pending', aiValue: '' },
+    evidenceReview: { status: 'pending', aiValue: '' },
+    finalDecision: { status: 'pending', aiValue: '' },
+  });
+  const [overrideJournal, setOverrideJournal] = useState<OverrideEntry[]>([]);
+  const [overrideModal, setOverrideModal] = useState<{ gate: GateKey; aiValue: string } | null>(null);
+  const [overrideReason, setOverrideReason] = useState('');
+  const [overrideValue, setOverrideValue] = useState('');
+
+  const confirmedGates = GATE_ORDER.filter(k => gateStates[k].status !== 'pending').length;
+  const overriddenGates = GATE_ORDER.filter(k => gateStates[k].status === 'overridden').length;
+
+  const approveGate = useCallback((gate: GateKey, aiValue: string) => {
+    setGateStates(prev => ({ ...prev, [gate]: { ...prev[gate], status: 'approved', aiValue, timestamp: new Date().toLocaleTimeString('en-GB') } }));
+    showToast(`${GATE_LABELS[gate]} approved by caseworker`, 'success');
+  }, []);
+
+  const submitOverride = useCallback(() => {
+    if (!overrideModal || !overrideReason.trim()) return;
+    const { gate, aiValue } = overrideModal;
+    setGateStates(prev => ({ ...prev, [gate]: { ...prev[gate], status: 'overridden', aiValue, caseworkerValue: overrideValue, reason: overrideReason, timestamp: new Date().toLocaleTimeString('en-GB') } }));
+    setOverrideJournal(prev => [...prev, { gate: GATE_LABELS[gate], aiSuggestion: aiValue, caseworkerDecision: overrideValue || 'Rejected AI recommendation', reason: overrideReason, timestamp: new Date().toLocaleString('en-GB') }]);
+    setOverrideModal(null);
+    setOverrideReason('');
+    setOverrideValue('');
+    showToast(`${GATE_LABELS[gate]} overridden — recorded in audit journal`, 'warning');
+  }, [overrideModal, overrideReason, overrideValue]);
+
+  const resetGate = useCallback((gate: GateKey) => {
+    setGateStates(prev => ({ ...prev, [gate]: { ...prev[gate], status: 'pending', caseworkerValue: undefined, reason: undefined, timestamp: undefined } }));
+  }, []);
 
   const threshold = BAND_THRESHOLDS[property.hvctsBand];
   const lowerBand = property.hvctsBand === 'H1' ? null
@@ -140,9 +189,10 @@ export function CaseDetailPage() {
     );
     setChangeHistory(chgHist);
 
-    const [aiRes, comps, propSales, epc, flood, planning, schools] = await Promise.all([
+    const [aiRes, comps, nearbyTx, propSales, epc, flood, planning, schools] = await Promise.all([
       fetchResearch(caseData),
       getComparableSales(street || 'CHESHAM PLACE'),
+      getNearbyTransactions(property.address.postcode),
       fetchPropertySaleHistory(property.address.line1, property.address.postcode),
       fetchEpcData(property.address.postcode),
       coords ? fetchFloodRisk(coords.lat, coords.lng) : Promise.resolve(null),
@@ -156,7 +206,14 @@ export function CaseDetailPage() {
       if (aiRes.tokens) setTokensUsed((t) => t + aiRes.tokens!.total);
     }
 
-    setLiveComps(comps);
+    const seen = new Set<string>();
+    const allComps = [...comps, ...nearbyTx].filter((tx) => {
+      const key = `${tx.address}|${tx.date}|${tx.price}`;
+      if (seen.has(key)) return false;
+      seen.add(key);
+      return true;
+    });
+    setLiveComps(allComps);
     setSaleHistory(propSales);
     setEpcData(epc);
     if (flood) setFloodData(flood);
@@ -238,13 +295,16 @@ export function CaseDetailPage() {
     });
 
     if (research) {
+      const psmSubject = research.poundPerSqm?.subject;
+      const psmAvg = research.poundPerSqm?.comparableAvg;
+      const psmText = psmSubject && psmAvg ? ` £/sqm: subject ${formatCurrency(psmSubject)} vs avg ${formatCurrency(psmAvg)}.` : '';
       trail.push({
         icon: 'ai',
-        text: `AI desktop valuation: ${formatCurrency(research.valuationEstimate)}. ${research.supportsBand ? 'Supports' : 'Does not support'} ${property.hvctsBand}. £/sqm: subject ${formatCurrency(research.poundPerSqm.subject)} vs avg ${formatCurrency(research.poundPerSqm.comparableAvg)}.`,
+        text: `AI desktop valuation: ${formatCurrency(research.valuationEstimate || 0)}. ${research.supportsBand ? 'Supports' : 'Does not support'} ${property.hvctsBand}.${psmText}`,
         source: `Azure OpenAI (${llmModel || 'gpt-5.5'})`,
         impact: research.supportsBand ? 'supports' : 'against',
       });
-      if (research.dataGaps.length > 0) {
+      if (research.dataGaps?.length > 0) {
         trail.push({
           icon: 'risk',
           text: `${research.dataGaps.length} data gap(s): ${research.dataGaps.slice(0, 2).join('; ')}.`,
@@ -312,6 +372,115 @@ export function CaseDetailPage() {
   const appealRiskPct = confidence > 70 ? 100 - confidence : confidence > 40 ? 60 : 85;
   const selectedComp = selectedComparable !== null ? property.comparables[selectedComparable] : null;
 
+  // ─── Anomaly Detection Engine ───
+  const anomalies = useMemo(() => {
+    const alerts: Array<{ severity: 'critical' | 'warning' | 'info'; title: string; detail: string }> = [];
+    if (saleHistory.length >= 2) {
+      const years = saleHistory.map((s) => parseInt(s.date.split('-')[0] || s.date.split(' ').pop() || '0'));
+      const minYear = Math.min(...years);
+      const maxYear = Math.max(...years);
+      if (maxYear - minYear <= 5 && saleHistory.length >= 3) {
+        alerts.push({ severity: 'warning', title: 'Rapid transactions', detail: `${saleHistory.length} sales in ${maxYear - minYear} years — potential flipping or ownership restructuring.` });
+      }
+    }
+    if (property.ownership.liableType === 'overseas-entity') {
+      const hasRoe = property.ownership.nodes.some((n) => n.source.toLowerCase().includes('roe') || n.detail.toLowerCase().includes('roe'));
+      if (!hasRoe) {
+        alerts.push({ severity: 'critical', title: 'ROE registration not found', detail: 'Overseas entity detected without Register of Overseas Entities reference. Compliance check required.' });
+      }
+    }
+    if (property.ownership.confidence < 60) {
+      alerts.push({ severity: 'warning', title: 'Low ownership confidence', detail: `Ownership chain confidence at ${property.ownership.confidence}% — gaps in the chain may affect liability determination.` });
+    }
+    if (saleHistory.length > 0 && saleHistory[0].price < threshold.min * 0.7) {
+      alerts.push({ severity: 'warning', title: 'Sale price below band floor', detail: `Last sale (${formatCurrency(saleHistory[0].price)}) is ${Math.round((1 - saleHistory[0].price / threshold.min) * 100)}% below the ${property.hvctsBand} threshold. Significant value increase since sale or band may be incorrect.` });
+    }
+    const prices = property.comparables.map((c) => c.salePrice);
+    if (prices.length >= 2) {
+      const maxP = Math.max(...prices);
+      const minP = Math.min(...prices);
+      if (maxP / minP > 2.5) {
+        alerts.push({ severity: 'info', title: 'Wide comparable spread', detail: `Comparables range from ${formatCurrency(minP)} to ${formatCurrency(maxP)} (${(maxP / minP).toFixed(1)}x). Consider narrowing selection criteria.` });
+      }
+    }
+    const multipleOwnerTypes = new Set(property.ownership.nodes.map((n) => {
+      const e = n.entity.toLowerCase();
+      return e.includes('ltd') || e.includes('limited') || e.includes('llp') ? 'company'
+        : e.includes('trust') ? 'trust'
+        : 'individual';
+    }));
+    if (multipleOwnerTypes.size > 1) {
+      alerts.push({ severity: 'info', title: 'Complex ownership structure', detail: `Multiple entity types in chain (${[...multipleOwnerTypes].join(', ')}). Verify beneficial ownership and liable party.` });
+    }
+    return alerts;
+  }, [saleHistory, property, threshold]);
+
+  // ─── Risk Radar Dimensions ───
+  const riskDimensions = useMemo(() => {
+    const evidenceScore = caseData.evidence.length > 0
+      ? Math.round(caseData.evidence.reduce((a, e) => a + e.score, 0) / caseData.evidence.length)
+      : 20;
+    const valuationCertainty = Math.min(100, Math.round(
+      (saleHistory.length > 0 ? 30 : 0) +
+      (property.comparables.length * 10) +
+      (researchData ? 20 : 0) +
+      (property.pad.floorArea > 0 ? 10 : 0)
+    ));
+    const ownershipClarity = property.ownership.confidence;
+    const appealSafety = confidence;
+    const dlmSimplicity = caseData.challengeType === 'Band dispute' ? 70
+      : caseData.challengeType === 'Liability dispute' ? 90
+      : caseData.challengeType === 'PAD correction' ? 75
+      : 30;
+    const dataCompleteness = Math.min(100, Math.round(
+      (saleHistory.length > 0 ? 20 : 0) +
+      (epcData.length > 0 ? 15 : 0) +
+      (floodData ? 10 : 0) +
+      (planningData.length > 0 ? 15 : 0) +
+      (schoolData.length > 0 ? 10 : 0) +
+      (ownershipTimeline.length > 0 ? 15 : 0) +
+      (property.comparables.length > 0 ? 15 : 0)
+    ));
+    return [
+      { label: 'Evidence', score: evidenceScore, color: evidenceScore >= 60 ? '#00703c' : evidenceScore >= 40 ? '#f47738' : '#d4351c' },
+      { label: 'Valuation', score: valuationCertainty, color: valuationCertainty >= 60 ? '#00703c' : valuationCertainty >= 40 ? '#f47738' : '#d4351c' },
+      { label: 'Ownership', score: ownershipClarity, color: ownershipClarity >= 60 ? '#00703c' : ownershipClarity >= 40 ? '#f47738' : '#d4351c' },
+      { label: 'Appeal Safety', score: appealSafety, color: appealSafety >= 60 ? '#00703c' : appealSafety >= 40 ? '#f47738' : '#d4351c' },
+      { label: 'DLM', score: dlmSimplicity, color: dlmSimplicity >= 60 ? '#00703c' : dlmSimplicity >= 40 ? '#f47738' : '#d4351c' },
+      { label: 'Data', score: dataCompleteness, color: dataCompleteness >= 60 ? '#00703c' : dataCompleteness >= 40 ? '#f47738' : '#d4351c' },
+    ];
+  }, [caseData, property, saleHistory, researchData, confidence, epcData, floodData, planningData, schoolData, ownershipTimeline]);
+
+  // ─── Comparable Adjustments ───
+  const adjustedComparables = useMemo(() => {
+    if (!property.comparables.length) return [];
+    const subjectPsm = property.estimatedValue / property.pad.floorArea;
+    return property.comparables.map((c) => {
+      const adjustments: Array<{ factor: string; amount: number; reason: string }> = [];
+      if (c.floorArea) {
+        const areaDiff = property.pad.floorArea - c.floorArea;
+        if (Math.abs(areaDiff) > 5) {
+          const areaAdj = areaDiff * subjectPsm * 0.85;
+          adjustments.push({ factor: 'Floor area', amount: Math.round(areaAdj), reason: `${areaDiff > 0 ? '+' : ''}${areaDiff}sqm @ £${Math.round(subjectPsm * 0.85)}/sqm` });
+        }
+      }
+      if (c.bedrooms && c.bedrooms !== property.pad.bedrooms) {
+        const bedDiff = property.pad.bedrooms - c.bedrooms;
+        const bedAdj = bedDiff * property.estimatedValue * 0.04;
+        adjustments.push({ factor: 'Bedrooms', amount: Math.round(bedAdj), reason: `${bedDiff > 0 ? '+' : ''}${bedDiff} bedroom(s) @ ~4% each` });
+      }
+      const saleYear = parseInt(c.saleDate.split('-')[0] || c.saleDate.split(' ').pop() || '2024');
+      const currentYear = 2028;
+      const yearsDiff = currentYear - saleYear;
+      if (yearsDiff > 1) {
+        const timeAdj = c.salePrice * 0.03 * yearsDiff;
+        adjustments.push({ factor: 'Time', amount: Math.round(timeAdj), reason: `${yearsDiff} years @ ~3%/yr indexation` });
+      }
+      const totalAdj = adjustments.reduce((a, adj) => a + adj.amount, 0);
+      return { ...c, adjustments, adjustedPrice: c.salePrice + totalAdj };
+    });
+  }, [property]);
+
   // Research map props (shared between inline and modal)
   const researchMapProps = {
     subjectProperty: {
@@ -329,6 +498,9 @@ export function CaseDetailPage() {
       matchStrength: c.matchStrength,
     })),
     liveTransactions: liveComps,
+    subjectSaleHistory: saleHistory.map((s) => ({ date: s.date, price: s.price, estateType: s.estateType, type: s.type })),
+    subjectOwnership: ownershipTimeline.map((o) => ({ date: o.date, event: o.event, entity: o.entity, tenure: o.tenure, source: o.source })),
+    subjectChanges: changeHistory.map((c) => ({ date: c.date, type: c.type, description: c.description, status: c.status, reference: c.reference })),
     onComparableSelect: (idx: number) => {
       setSelectedComparable(idx === selectedComparable ? null : idx);
       showToast(`Comparable ${idx + 1} ${idx === selectedComparable ? 'deselected' : 'selected'}`, 'info');
@@ -337,8 +509,8 @@ export function CaseDetailPage() {
     dataLayers: {
       epcRatings: epcData.map((e) => ({ address: e.address, currentRating: e.currentRating, currentScore: e.currentScore, floorArea: e.floorArea })),
       floodRisk: floodData ? { riskLevel: floodData.riskLevel, floodAreas: floodData.floodAreas.map((a) => ({ label: a.label, description: a.description })) } : undefined,
-      schools: schoolData.map((s) => ({ name: s.name, type: s.type, distance: s.distance, ofstedRating: s.ofstedRating })),
-      planning: planningData.map((p) => ({ reference: p.reference, description: p.description, status: p.status, dateReceived: p.dateReceived })),
+      schools: schoolData.map((s) => ({ name: s.name, type: s.type, distance: s.distance, ofstedRating: s.ofstedRating, lat: s.lat, lng: s.lng })),
+      planning: planningData.map((p) => ({ reference: p.reference, description: p.description, status: p.status, dateReceived: p.dateReceived, lat: p.lat, lng: p.lng })),
     },
   };
 
@@ -380,17 +552,160 @@ export function CaseDetailPage() {
         })}
       </div>
 
+      {/* ===== HITL: Decision Audit Bar ===== */}
+      <div className="hitl-audit-bar">
+        <div className="hitl-audit-bar__label">
+          <span className="hitl-audit-bar__icon">&#x1F464;</span>
+          <span>HUMAN-IN-THE-LOOP</span>
+          <span className="hitl-audit-bar__count">{confirmedGates}/{GATE_ORDER.length} gates confirmed{overriddenGates > 0 ? ` · ${overriddenGates} override${overriddenGates > 1 ? 's' : ''}` : ''}</span>
+        </div>
+        <div className="hitl-audit-bar__gates">
+          {GATE_ORDER.map((key, i) => {
+            const g = gateStates[key];
+            return (
+              <div key={key} className={`hitl-gate hitl-gate--${g.status}`} onClick={() => g.status !== 'pending' && resetGate(key)} title={g.status === 'pending' ? `${GATE_LABELS[key]}: Awaiting caseworker decision` : `${GATE_LABELS[key]}: ${g.status}${g.timestamp ? ` at ${g.timestamp}` : ''}${g.reason ? ` — ${g.reason}` : ''}`}>
+                <div className="hitl-gate__dot">
+                  {g.status === 'approved' ? '✓' : g.status === 'overridden' ? '✎' : g.status === 'rejected' ? '✕' : String(i + 1)}
+                </div>
+                <div className="hitl-gate__label">{GATE_LABELS[key]}</div>
+                {i < GATE_ORDER.length - 1 && <div className={`hitl-gate__connector${g.status !== 'pending' ? ' hitl-gate__connector--done' : ''}`} />}
+              </div>
+            );
+          })}
+        </div>
+        {overrideJournal.length > 0 && (
+          <button className="hitl-audit-bar__journal-btn" onClick={() => { setActiveTab('timeline'); showToast('Viewing override journal', 'info'); }}>
+            Audit Journal ({overrideJournal.length})
+          </button>
+        )}
+      </div>
+
+      {/* ===== HITL: Override Modal ===== */}
+      {overrideModal && (
+        <div className="hitl-override-modal" onClick={() => setOverrideModal(null)}>
+          <div className="hitl-override-modal__card" onClick={e => e.stopPropagation()}>
+            <div className="hitl-override-modal__header">
+              <h3>Override: {GATE_LABELS[overrideModal.gate]}</h3>
+              <button onClick={() => setOverrideModal(null)} className="hitl-override-modal__close">&times;</button>
+            </div>
+            <div className="hitl-override-modal__body">
+              <div className="hitl-override-modal__ai-row">
+                <span className="hitl-override-modal__ai-badge">AI RECOMMENDS</span>
+                <span>{overrideModal.aiValue}</span>
+              </div>
+              <div className="govuk-form-group" style={{ marginBottom: 12 }}>
+                <label className="govuk-label" style={{ fontSize: 14 }}>Your assessment (optional)</label>
+                <input className="govuk-input" style={{ fontSize: 14 }} placeholder="e.g., Revised valuation, different band..."
+                  value={overrideValue} onChange={e => setOverrideValue(e.target.value)} />
+              </div>
+              <div className="govuk-form-group" style={{ marginBottom: 12 }}>
+                <label className="govuk-label" style={{ fontSize: 14 }}>Reason for override <span style={{ color: 'var(--govuk-red)' }}>*</span></label>
+                <textarea className="govuk-textarea" rows={3} style={{ fontSize: 14 }} placeholder="Why is the AI recommendation being overridden? This is recorded in the audit trail."
+                  value={overrideReason} onChange={e => setOverrideReason(e.target.value)} />
+              </div>
+              <div className="govuk-warning-text" style={{ margin: '10px 0' }}>
+                <span className="govuk-warning-text__icon" style={{ width: 28, height: 28, fontSize: 18 }}>!</span>
+                <span className="govuk-warning-text__text" style={{ fontSize: 13 }}>This override will be recorded in the case audit journal and may be reviewed by senior caseworkers.</span>
+              </div>
+              <div style={{ display: 'flex', gap: 8 }}>
+                <button className="govuk-button govuk-button--warning" style={{ fontSize: 14, margin: 0 }} onClick={submitOverride} disabled={!overrideReason.trim()}>Confirm Override</button>
+                <button className="govuk-button govuk-button--secondary" style={{ fontSize: 14, margin: 0 }} onClick={() => setOverrideModal(null)}>Cancel</button>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
+
       {/* ===== MAP MODAL (fullscreen overlay) ===== */}
       {mapModalOpen && property.coordinates && (
         <div className="cw-map-modal" onClick={() => setMapModalOpen(false)}>
           <div className="cw-map-modal__header" onClick={(e) => e.stopPropagation()}>
             <div className="cw-map-modal__title">{fullAddress} — Research Map</div>
             <div className="cw-map-modal__toolbar">
-              <button onClick={() => setMapModalOpen(false)}>Close</button>
+              <span style={{ fontSize: 11, opacity: 0.7 }}>Band {property.hvctsBand} · {formatCurrency(property.estimatedValue)}</span>
+              <button onClick={() => setMapInfoPanel((p) => !p)}>{mapInfoPanel ? 'Hide info' : 'Info panel'}</button>
+              <button onClick={() => setMapModalOpen(false)}>Close &times;</button>
             </div>
           </div>
-          <div className="cw-map-modal__body" onClick={(e) => e.stopPropagation()}>
-            <ResearchMap {...researchMapProps} mapHeight="100%" />
+          <div className="cw-map-modal__body" onClick={(e) => e.stopPropagation()} style={{ flexDirection: 'row' }}>
+            {/* Map fills remaining space */}
+            <div style={{ flex: 1, position: 'relative', minWidth: 0 }}>
+              <ResearchMap
+                key="modal-map"
+                {...researchMapProps}
+                mapHeight="100%"
+                onExpand={undefined}
+              />
+            </div>
+
+            {/* Collapsible info sidebar */}
+            {mapInfoPanel && (
+              <div className="cw-map-info-panel" onClick={(e) => e.stopPropagation()}>
+                <div className="cw-map-info-panel__section">
+                  <div className="cw-map-info-panel__title">Subject Property</div>
+                  <div className="cw-map-info-panel__row"><span>Address</span><strong style={{ textAlign: 'right', maxWidth: 180 }}>{fullAddress}</strong></div>
+                  <div className="cw-map-info-panel__row"><span>Value</span><strong>{formatCurrency(property.estimatedValue)}</strong></div>
+                  <div className="cw-map-info-panel__row"><span>Band</span><strong>{property.hvctsBand}</strong></div>
+                  <div className="cw-map-info-panel__row"><span>CT Band</span><span>{property.ctBand}</span></div>
+                  <div className="cw-map-info-panel__row"><span>Floor area</span><span>{property.pad.floorArea ? `${property.pad.floorArea} ${property.pad.floorAreaUnit}` : '—'}</span></div>
+                  <div className="cw-map-info-panel__row"><span>Bedrooms</span><span>{property.pad.bedrooms ?? '—'}</span></div>
+                </div>
+
+                {saleHistory.length > 0 && (
+                  <div className="cw-map-info-panel__section">
+                    <div className="cw-map-info-panel__title">Sale History ({saleHistory.length})</div>
+                    {saleHistory.map((s, i) => (
+                      <div key={i} className="cw-map-info-panel__row">
+                        <span>{s.date} <span className="cw-map-info-panel__tag">{s.estateType === 'leasehold' ? 'LH' : 'FH'}</span></span>
+                        <strong>{formatCurrency(s.price)}</strong>
+                      </div>
+                    ))}
+                  </div>
+                )}
+
+                {ownershipTimeline.length > 0 && (
+                  <div className="cw-map-info-panel__section">
+                    <div className="cw-map-info-panel__title">Ownership ({ownershipTimeline.length})</div>
+                    {ownershipTimeline.map((o, i) => (
+                      <div key={i} className="cw-map-info-panel__row" style={{ flexDirection: 'column', gap: 0 }}>
+                        <div style={{ display: 'flex', justifyContent: 'space-between' }}>
+                          <span style={{ fontSize: 11, color: 'var(--govuk-dark-grey)' }}>{o.date}</span>
+                          <span style={{ fontSize: 11 }}>{o.event}</span>
+                        </div>
+                        <div style={{ fontSize: 12, fontWeight: 600, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{o.entity}</div>
+                      </div>
+                    ))}
+                  </div>
+                )}
+
+                {changeHistory.length > 0 && (
+                  <div className="cw-map-info-panel__section">
+                    <div className="cw-map-info-panel__title">Planning / Changes ({changeHistory.length})</div>
+                    {changeHistory.map((c, i) => (
+                      <div key={i} className="cw-map-info-panel__row" style={{ flexDirection: 'column', gap: 0 }}>
+                        <div style={{ display: 'flex', justifyContent: 'space-between' }}>
+                          <span style={{ fontSize: 11, color: 'var(--govuk-dark-grey)' }}>{c.date}</span>
+                          <span className={`cw-map-info-panel__tag cw-map-info-panel__tag--${c.status}`}>{c.status}</span>
+                        </div>
+                        <div style={{ fontSize: 11, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{c.description}</div>
+                      </div>
+                    ))}
+                  </div>
+                )}
+
+                {liveComps.length > 0 && (
+                  <div className="cw-map-info-panel__section">
+                    <div className="cw-map-info-panel__title">Nearby Sales ({liveComps.length})</div>
+                    {liveComps.slice(0, 8).map((tx, i) => (
+                      <div key={i} className="cw-map-info-panel__row">
+                        <span style={{ fontSize: 11, maxWidth: 160, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{tx.address}</span>
+                        <strong style={{ fontSize: 12 }}>{formatCurrency(tx.price)}</strong>
+                      </div>
+                    ))}
+                  </div>
+                )}
+              </div>
+            )}
           </div>
         </div>
       )}
@@ -420,6 +735,22 @@ export function CaseDetailPage() {
             </div>
 
             {researchLoading && <LoadingPanel label="Assembling property data" />}
+
+            {/* Anomaly alerts on research map pane */}
+            {researchRun && anomalies.filter(a => a.severity === 'critical' || a.severity === 'warning').length > 0 && (
+              <div style={{ marginBottom: 6 }}>
+                {anomalies.filter(a => a.severity !== 'info').map((a, i) => (
+                  <div key={i} style={{
+                    display: 'flex', gap: 6, alignItems: 'center', padding: '4px 8px', marginBottom: 2, fontSize: 12,
+                    background: a.severity === 'critical' ? '#fdf0ed' : 'var(--govuk-light-grey)',
+                    borderLeft: `3px solid ${a.severity === 'critical' ? 'var(--govuk-red)' : 'var(--govuk-orange)'}`,
+                  }}>
+                    <span style={{ fontWeight: 700, color: a.severity === 'critical' ? 'var(--govuk-red)' : 'var(--govuk-orange)' }}>!</span>
+                    <span><strong>{a.title}</strong> — {a.detail}</span>
+                  </div>
+                ))}
+              </div>
+            )}
 
             {/* Interactive Research Map */}
             {property.coordinates && researchRun && (
@@ -653,7 +984,7 @@ export function CaseDetailPage() {
               )}
             </Section>
 
-            {/* 5. AI Comparables */}
+            {/* 5. AI Comparables — HITL Gate */}
             {property.comparables.length > 0 && (
               <Section
                 id="comparables"
@@ -664,6 +995,11 @@ export function CaseDetailPage() {
                 open={openSections.has('comparables')}
                 onToggle={() => toggleSection('comparables')}
               >
+                <div className="hitl-recommendation-card">
+                  <div className="hitl-recommendation-card__banner">
+                    <span>AI COMPARABLE SELECTION</span>
+                    <span className="hitl-recommendation-card__model">Caseworker may add/remove comparables</span>
+                  </div>
                 {property.comparables.map((c, i) => (
                   <div key={i} className={`ai-selection-card${selectedComparable === i ? ' ai-selection-card--selected' : ''}`}
                     onClick={() => setSelectedComparable(selectedComparable === i ? null : i)}
@@ -740,32 +1076,103 @@ export function CaseDetailPage() {
                     </div>
                   </div>
                 )}
+                  <HitlActions gate="comparables" gateState={gateStates.comparables}
+                    aiValue={`${property.comparables.length} comparables selected (${property.comparables.filter(c => c.matchStrength === 'strong').length} strong matches)`}
+                    onApprove={approveGate} onOverride={(g, v) => setOverrideModal({ gate: g, aiValue: v })} onReset={resetGate} />
+                </div>
               </Section>
             )}
 
-            {/* 6. AI Valuation Analysis */}
+            {/* 5b. Comparable Adjustments */}
+            {adjustedComparables.length > 0 && adjustedComparables.some(c => c.adjustments.length > 0) && (
+              <Section
+                id="adjustments"
+                title="Comparable adjustments"
+                badge={{ text: 'AI Engine', color: 'var(--govuk-dark-blue)' }}
+                count={adjustedComparables.length}
+                summary={`Avg adjusted: ${formatCurrency(Math.round(adjustedComparables.reduce((a, c) => a + c.adjustedPrice, 0) / adjustedComparables.length))}`}
+                open={openSections.has('adjustments')}
+                onToggle={() => toggleSection('adjustments')}
+              >
+                <p style={{ fontSize: 12, color: 'var(--govuk-dark-grey)', margin: '0 0 10px' }}>
+                  Transparent adjustments applied to each comparable to account for property differences. All figures are indicative — caseworker judgement required.
+                </p>
+                <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 12 }}>
+                  <thead>
+                    <tr style={{ borderBottom: '2px solid var(--govuk-black)' }}>
+                      <th style={{ textAlign: 'left', padding: '4px 6px', fontSize: 11, fontWeight: 700, textTransform: 'uppercase', color: 'var(--govuk-dark-grey)' }}>#</th>
+                      <th style={{ textAlign: 'left', padding: '4px 6px', fontSize: 11, fontWeight: 700, textTransform: 'uppercase', color: 'var(--govuk-dark-grey)' }}>Raw price</th>
+                      <th style={{ textAlign: 'left', padding: '4px 6px', fontSize: 11, fontWeight: 700, textTransform: 'uppercase', color: 'var(--govuk-dark-grey)' }}>Adjustments</th>
+                      <th style={{ textAlign: 'right', padding: '4px 6px', fontSize: 11, fontWeight: 700, textTransform: 'uppercase', color: 'var(--govuk-dark-grey)' }}>Adjusted</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {adjustedComparables.map((c, i) => (
+                      <tr key={i} style={{ borderBottom: '1px solid var(--govuk-light-grey)' }}>
+                        <td style={{ padding: '6px', fontWeight: 700 }}>{i + 1}</td>
+                        <td style={{ padding: '6px' }}>{formatCurrency(c.salePrice)}</td>
+                        <td style={{ padding: '6px' }}>
+                          {c.adjustments.map((adj, j) => (
+                            <div key={j} style={{ display: 'flex', gap: 4, alignItems: 'center', marginBottom: 2 }}>
+                              <span style={{ color: adj.amount >= 0 ? 'var(--govuk-green)' : 'var(--govuk-red)', fontWeight: 600, minWidth: 70, textAlign: 'right' }}>
+                                {adj.amount >= 0 ? '+' : ''}{formatCurrency(adj.amount)}
+                              </span>
+                              <span style={{ color: 'var(--govuk-dark-grey)' }}>{adj.factor}: {adj.reason}</span>
+                            </div>
+                          ))}
+                          {c.adjustments.length === 0 && <span style={{ color: 'var(--govuk-dark-grey)' }}>No adjustments</span>}
+                        </td>
+                        <td style={{ padding: '6px', textAlign: 'right', fontWeight: 700, color: c.adjustedPrice >= threshold.min ? 'var(--govuk-green)' : 'var(--govuk-red)' }}>
+                          {formatCurrency(c.adjustedPrice)}
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                  <tfoot>
+                    <tr style={{ borderTop: '2px solid var(--govuk-black)' }}>
+                      <td colSpan={3} style={{ padding: '6px', fontWeight: 700 }}>Adjusted average</td>
+                      <td style={{ padding: '6px', textAlign: 'right', fontWeight: 700, fontSize: 14 }}>
+                        {formatCurrency(Math.round(adjustedComparables.reduce((a, c) => a + c.adjustedPrice, 0) / adjustedComparables.length))}
+                      </td>
+                    </tr>
+                  </tfoot>
+                </table>
+              </Section>
+            )}
+
+            {/* 6. AI Valuation Analysis — HITL Gate */}
             {researchData && (
               <Section
                 id="aiAnalysis"
                 title="AI valuation analysis"
                 badge={{ text: 'AI', color: 'var(--govuk-dark-blue)' }}
-                summary={`Desktop estimate: ${formatCurrency(researchData.valuationEstimate)}`}
+                summary={`Desktop estimate: ${formatCurrency(researchData.valuationEstimate || property.estimatedValue)}`}
                 open={openSections.has('aiAnalysis')}
                 onToggle={() => toggleSection('aiAnalysis')}
               >
-                <div style={{ fontSize: 14, lineHeight: 1.6 }}>
-                  <p style={{ margin: '0 0 8px' }}>{researchData.comparableAnalysis}</p>
-                  {researchData.dataGaps.length > 0 && (
-                    <div style={{ padding: 8, borderLeft: '3px solid var(--govuk-orange)', background: 'var(--govuk-light-grey)', fontSize: 13, marginTop: 8 }}>
-                      <strong>Data gaps:</strong>
-                      <ul style={{ marginLeft: 16, marginTop: 4, marginBottom: 0 }}>{researchData.dataGaps.map((g, i) => <li key={i}>{g}</li>)}</ul>
-                    </div>
-                  )}
+                <div className="hitl-recommendation-card">
+                  <div className="hitl-recommendation-card__banner">
+                    <span>AI RECOMMENDS</span>
+                    <span className="hitl-recommendation-card__model">{llmModel || 'gpt-5.5'}</span>
+                  </div>
+                  <div style={{ fontSize: 14, lineHeight: 1.6, padding: '10px 0' }}>
+                    <p style={{ margin: '0 0 8px' }}>{researchData.comparableAnalysis || researchData.recommendation || 'Analysis complete.'}</p>
+                    <p style={{ margin: '0 0 8px', fontWeight: 700 }}>Desktop estimate: {formatCurrency(researchData.valuationEstimate || property.estimatedValue)}</p>
+                    {(researchData.dataGaps?.length ?? 0) > 0 && (
+                      <div style={{ padding: 8, borderLeft: '3px solid var(--govuk-orange)', background: 'var(--govuk-light-grey)', fontSize: 13, marginTop: 8 }}>
+                        <strong>Data gaps:</strong>
+                        <ul style={{ marginLeft: 16, marginTop: 4, marginBottom: 0 }}>{(researchData.dataGaps || []).map((g, i) => <li key={i}>{g}</li>)}</ul>
+                      </div>
+                    )}
+                  </div>
+                  <HitlActions gate="valuation" gateState={gateStates.valuation}
+                    aiValue={`Desktop estimate: ${formatCurrency(researchData.valuationEstimate || property.estimatedValue)}`}
+                    onApprove={approveGate} onOverride={(g, v) => setOverrideModal({ gate: g, aiValue: v })} onReset={resetGate} />
                 </div>
               </Section>
             )}
 
-            {/* 7. Desktop Valuation */}
+            {/* 7. Desktop Valuation — HITL Gate */}
             {caseData.challengeType === 'Band dispute' && property.comparables.length > 0 && (
               <Section
                 id="desktopVal"
@@ -775,34 +1182,43 @@ export function CaseDetailPage() {
                 open={openSections.has('desktopVal')}
                 onToggle={() => toggleSection('desktopVal')}
               >
-                <div className="desktop-valuation" style={{ margin: 0, padding: 14 }}>
-                  <div className="desktop-valuation__header" style={{ marginBottom: 10 }}>
-                    <div>
-                      <p className="govuk-body-s" style={{ margin: 0, color: 'var(--govuk-dark-grey)', fontSize: 12 }}>AI estimated value</p>
-                      <div className="desktop-valuation__value" style={{ fontSize: 28 }}>{formatCurrency(researchData?.valuationEstimate || property.estimatedValue)}</div>
-                    </div>
-                    <Tag color={property.estimatedValue >= threshold.min ? 'green' : 'red'}>
-                      {property.estimatedValue >= threshold.min ? `Supports ${property.hvctsBand}` : `Below ${property.hvctsBand}`}
-                    </Tag>
+                <div className="hitl-recommendation-card">
+                  <div className="hitl-recommendation-card__banner">
+                    <span>AI BAND ASSESSMENT</span>
+                    <span className="hitl-recommendation-card__model">Requires caseworker sign-off</span>
                   </div>
-                  <div className="desktop-valuation__comparison" style={{ gap: 10 }}>
-                    <div className="desktop-valuation__item" style={{ padding: 8 }}>
-                      <div className="desktop-valuation__item-label" style={{ fontSize: 11 }}>Threshold</div>
-                      <div className="desktop-valuation__item-value" style={{ fontSize: 16 }}>{formatCurrency(threshold.min)}</div>
+                  <div className="desktop-valuation" style={{ margin: 0, padding: 14 }}>
+                    <div className="desktop-valuation__header" style={{ marginBottom: 10 }}>
+                      <div>
+                        <p className="govuk-body-s" style={{ margin: 0, color: 'var(--govuk-dark-grey)', fontSize: 12 }}>AI estimated value</p>
+                        <div className="desktop-valuation__value" style={{ fontSize: 28 }}>{formatCurrency(researchData?.valuationEstimate || property.estimatedValue)}</div>
+                      </div>
+                      <Tag color={property.estimatedValue >= threshold.min ? 'green' : 'red'}>
+                        {property.estimatedValue >= threshold.min ? `Supports ${property.hvctsBand}` : `Below ${property.hvctsBand}`}
+                      </Tag>
                     </div>
-                    <div className="desktop-valuation__item" style={{ padding: 8 }}>
-                      <div className="desktop-valuation__item-label" style={{ fontSize: 11 }}>Headroom</div>
-                      <div className="desktop-valuation__item-value" style={{ fontSize: 16, color: property.estimatedValue - threshold.min > 0 ? 'var(--govuk-green)' : 'var(--govuk-red)' }}>
-                        {property.estimatedValue - threshold.min > 0 ? '+' : ''}{formatCurrency(property.estimatedValue - threshold.min)}
+                    <div className="desktop-valuation__comparison" style={{ gap: 10 }}>
+                      <div className="desktop-valuation__item" style={{ padding: 8 }}>
+                        <div className="desktop-valuation__item-label" style={{ fontSize: 11 }}>Threshold</div>
+                        <div className="desktop-valuation__item-value" style={{ fontSize: 16 }}>{formatCurrency(threshold.min)}</div>
+                      </div>
+                      <div className="desktop-valuation__item" style={{ padding: 8 }}>
+                        <div className="desktop-valuation__item-label" style={{ fontSize: 11 }}>Headroom</div>
+                        <div className="desktop-valuation__item-value" style={{ fontSize: 16, color: property.estimatedValue - threshold.min > 0 ? 'var(--govuk-green)' : 'var(--govuk-red)' }}>
+                          {property.estimatedValue - threshold.min > 0 ? '+' : ''}{formatCurrency(property.estimatedValue - threshold.min)}
+                        </div>
+                      </div>
+                      <div className="desktop-valuation__item" style={{ padding: 8 }}>
+                        <div className="desktop-valuation__item-label" style={{ fontSize: 11 }}>Comp median</div>
+                        <div className="desktop-valuation__item-value" style={{ fontSize: 16 }}>
+                          {formatCurrency(property.comparables.reduce((a, c) => a + c.salePrice, 0) / (property.comparables.length || 1))}
+                        </div>
                       </div>
                     </div>
-                    <div className="desktop-valuation__item" style={{ padding: 8 }}>
-                      <div className="desktop-valuation__item-label" style={{ fontSize: 11 }}>Comp median</div>
-                      <div className="desktop-valuation__item-value" style={{ fontSize: 16 }}>
-                        {formatCurrency(property.comparables.reduce((a, c) => a + c.salePrice, 0) / (property.comparables.length || 1))}
-                      </div>
-                    </div>
                   </div>
+                  <HitlActions gate="bandAssessment" gateState={gateStates.bandAssessment}
+                    aiValue={`${property.estimatedValue >= threshold.min ? 'Supports' : 'Below'} ${property.hvctsBand} — ${formatCurrency(researchData?.valuationEstimate || property.estimatedValue)}`}
+                    onApprove={approveGate} onOverride={(g, v) => setOverrideModal({ gate: g, aiValue: v })} onReset={resetGate} />
                 </div>
               </Section>
             )}
@@ -879,12 +1295,46 @@ export function CaseDetailPage() {
             {/* =================== BRIEF TAB =================== */}
             {activeTab === 'brief' && (
               <>
-                {briefLoading && <LoadingPanel label="Generating case brief" />}
-                {!briefLoading && (
-                  <AiPanel icon="A" label="Evidence Analyst + Decision Composer" title="AI case brief" animate>
-                    <p style={{ fontSize: 17, lineHeight: 1.6 }}>{briefData?.summary || caseData.aiSummary}</p>
-                  </AiPanel>
+                {/* Anomaly alerts */}
+                {anomalies.length > 0 && (
+                  <div style={{ marginBottom: 20 }}>
+                    {anomalies.map((a, i) => (
+                      <div key={i} style={{
+                        display: 'flex', gap: 10, alignItems: 'flex-start', padding: '8px 12px', marginBottom: 4,
+                        borderLeft: `4px solid ${a.severity === 'critical' ? 'var(--govuk-red)' : a.severity === 'warning' ? 'var(--govuk-orange)' : 'var(--govuk-blue)'}`,
+                        background: a.severity === 'critical' ? '#fdf0ed' : 'var(--govuk-light-grey)',
+                      }}>
+                        <div style={{
+                          width: 22, height: 22, borderRadius: '50%', flexShrink: 0,
+                          background: a.severity === 'critical' ? 'var(--govuk-red)' : a.severity === 'warning' ? 'var(--govuk-orange)' : 'var(--govuk-blue)',
+                          color: '#fff', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 12, fontWeight: 700,
+                        }}>!</div>
+                        <div>
+                          <div style={{ fontSize: 14, fontWeight: 700 }}>{a.title}</div>
+                          <div style={{ fontSize: 13, color: 'var(--govuk-dark-grey)' }}>{a.detail}</div>
+                        </div>
+                      </div>
+                    ))}
+                  </div>
                 )}
+
+                {/* Risk Radar + AI Brief side by side */}
+                <div style={{ display: 'flex', gap: 20, marginBottom: 20 }}>
+                  <div style={{ flex: 1 }}>
+                    {briefLoading && <LoadingPanel label="Generating case brief" />}
+                    {!briefLoading && (
+                      <AiPanel icon="A" label="Evidence Analyst + Decision Composer" title="AI case brief" animate>
+                        <p style={{ fontSize: 17, lineHeight: 1.6 }}>{briefData?.summary || caseData.aiSummary}</p>
+                      </AiPanel>
+                    )}
+                  </div>
+                  <div style={{ width: 260, flexShrink: 0 }}>
+                    <div style={{ border: '1px solid var(--govuk-mid-grey)', padding: '12px 8px', background: 'white' }}>
+                      <div style={{ fontSize: 14, fontWeight: 700, textAlign: 'center', marginBottom: 8, color: 'var(--govuk-dark-blue)' }}>Case Risk Assessment</div>
+                      <RiskRadar dimensions={riskDimensions} size={200} />
+                    </div>
+                  </div>
+                </div>
 
                 <h2 className="govuk-heading-m">AI reasoning chain</h2>
                 <div className="reasoning-chain">
@@ -931,18 +1381,27 @@ export function CaseDetailPage() {
                 {caseData.evidence.length === 0 ? (
                   <p className="govuk-body">No evidence submitted by customer.</p>
                 ) : (
-                  <AiPanel icon="E" label="Evidence Analyst" title={`${caseData.evidence.length} item(s) assessed`}>
-                    {caseData.evidence.map((e) => (
-                      <EvidenceScore key={e.id} score={e.score} strength={e.strength} title={`${e.fileName} — ${e.description}`} assessment={e.aiAssessment} />
-                    ))}
-                    <div style={{ marginTop: 15, padding: '10px 12px', background: 'var(--govuk-light-grey)', fontSize: 14 }}>
-                      <strong>Evidence package strength:</strong>{' '}
-                      {(() => {
-                        const avg = caseData.evidence.reduce((a, e) => a + e.score, 0) / caseData.evidence.length;
-                        return avg > 80 ? 'Strong — sufficient for decision' : avg > 50 ? 'Moderate — consider requesting additional evidence' : 'Weak — insufficient for band change';
-                      })()}
+                  <div className="hitl-recommendation-card">
+                    <div className="hitl-recommendation-card__banner">
+                      <span>AI EVIDENCE ASSESSMENT</span>
+                      <span className="hitl-recommendation-card__model">Evidence Analyst</span>
                     </div>
-                  </AiPanel>
+                    <AiPanel icon="E" label="Evidence Analyst" title={`${caseData.evidence.length} item(s) assessed`}>
+                      {caseData.evidence.map((e) => (
+                        <EvidenceScore key={e.id} score={e.score} strength={e.strength} title={`${e.fileName} — ${e.description}`} assessment={e.aiAssessment} />
+                      ))}
+                      <div style={{ marginTop: 15, padding: '10px 12px', background: 'var(--govuk-light-grey)', fontSize: 14 }}>
+                        <strong>Evidence package strength:</strong>{' '}
+                        {(() => {
+                          const avg = caseData.evidence.reduce((a, e) => a + e.score, 0) / caseData.evidence.length;
+                          return avg > 80 ? 'Strong — sufficient for decision' : avg > 50 ? 'Moderate — consider requesting additional evidence' : 'Weak — insufficient for band change';
+                        })()}
+                      </div>
+                    </AiPanel>
+                    <HitlActions gate="evidenceReview" gateState={gateStates.evidenceReview}
+                      aiValue={`${caseData.evidence.length} evidence items assessed — ${(() => { const avg = caseData.evidence.reduce((a, e) => a + e.score, 0) / caseData.evidence.length; return avg > 80 ? 'Strong' : avg > 50 ? 'Moderate' : 'Weak'; })()}`}
+                      onApprove={approveGate} onOverride={(g, v) => setOverrideModal({ gate: g, aiValue: v })} onReset={resetGate} />
+                  </div>
                 )}
                 <h2 className="govuk-heading-m" style={{ marginTop: 25 }}>Caseworker actions</h2>
                 <div className="action-bar">
@@ -981,11 +1440,20 @@ export function CaseDetailPage() {
                     </div>
                   ))}
                 </div>
-                <p className="govuk-body-s">
-                  Ownership confidence: <strong>{property.ownership.confidence}%</strong>
-                  {property.ownership.confidence < 80 && ' — additional verification recommended'}.
-                  Liable party: <strong>{property.ownership.liableEntity}</strong>.
-                </p>
+                <div className="hitl-recommendation-card" style={{ marginTop: 12 }}>
+                  <div className="hitl-recommendation-card__banner">
+                    <span>AI OWNERSHIP VERIFICATION</span>
+                    <span className="hitl-recommendation-card__model">Ownership Cartographer</span>
+                  </div>
+                  <p className="govuk-body-s" style={{ padding: '8px 0 0' }}>
+                    Ownership confidence: <strong>{property.ownership.confidence}%</strong>
+                    {property.ownership.confidence < 80 && ' — additional verification recommended'}.
+                    Liable party: <strong>{property.ownership.liableEntity}</strong>.
+                  </p>
+                  <HitlActions gate="ownership" gateState={gateStates.ownership}
+                    aiValue={`Ownership chain — ${property.ownership.confidence}% confidence — liable: ${property.ownership.liableEntity}`}
+                    onApprove={approveGate} onOverride={(g, v) => setOverrideModal({ gate: g, aiValue: v })} onReset={resetGate} />
+                </div>
 
                 <hr className="govuk-section-break govuk-section-break--l govuk-section-break--visible" />
 
@@ -1114,18 +1582,45 @@ export function CaseDetailPage() {
                 )}
 
                 <h2 className="govuk-heading-m">Issue decision</h2>
+                {/* HITL Governance Gate Check */}
+                {confirmedGates < GATE_ORDER.length - 1 && (
+                  <div className="hitl-gate-warning">
+                    <div className="govuk-warning-text" style={{ margin: 0, padding: '8px 12px', background: '#fdf0ed', borderLeft: '4px solid var(--govuk-red)' }}>
+                      <span className="govuk-warning-text__icon" style={{ width: 28, height: 28, fontSize: 18, flexShrink: 0 }}>!</span>
+                      <div>
+                        <span className="govuk-warning-text__text" style={{ fontSize: 14 }}>
+                          {GATE_ORDER.length - 1 - confirmedGates} governance gate{GATE_ORDER.length - 1 - confirmedGates > 1 ? 's' : ''} still pending
+                        </span>
+                        <div style={{ fontSize: 12, fontWeight: 400, color: 'var(--govuk-dark-grey)', marginTop: 2 }}>
+                          Complete all AI review gates before issuing a final decision: {GATE_ORDER.filter(k => k !== 'finalDecision' && gateStates[k].status === 'pending').map(k => GATE_LABELS[k]).join(', ')}
+                        </div>
+                      </div>
+                    </div>
+                  </div>
+                )}
                 {!decisionAccepted ? (
-                  <div className="action-bar">
-                    <button className="govuk-button govuk-button--primary" onClick={() => { setDecisionAccepted(true); showToast('Decision accepted — letter queued for issue', 'success'); }}>
+                  <div className="action-bar" style={{ marginTop: 12 }}>
+                    <button className="govuk-button govuk-button--primary"
+                      disabled={confirmedGates < GATE_ORDER.length - 1}
+                      onClick={() => {
+                        approveGate('finalDecision', decisionData?.recommendation || 'Maintain band');
+                        setDecisionAccepted(true);
+                        showToast('Decision accepted — all gates confirmed — letter queued', 'success');
+                      }}>
                       Accept AI recommendation
                     </button>
-                    <button className="govuk-button govuk-button--secondary" onClick={() => showToast('Decision overridden — manual entry opened', 'warning')}>Override decision</button>
+                    <button className="govuk-button govuk-button--secondary" onClick={() => {
+                      setOverrideModal({ gate: 'finalDecision', aiValue: decisionData?.recommendation || 'Maintain band' });
+                    }}>Override decision</button>
                     <button className="govuk-button govuk-button--secondary" onClick={() => showToast('Case escalated to team lead', 'warning')}>Escalate</button>
                   </div>
                 ) : (
                   <div className="govuk-panel govuk-panel--confirmation" style={{ padding: 15, fontSize: 16 }}>
                     <h2 className="govuk-panel__title" style={{ fontSize: 22 }}>Decision issued</h2>
-                    <p className="govuk-panel__body" style={{ fontSize: 15 }}>Letter queued for dispatch. Case status updated to resolved.</p>
+                    <p className="govuk-panel__body" style={{ fontSize: 15 }}>All governance gates confirmed. Letter queued for dispatch. Case status updated to resolved.</p>
+                    <div style={{ marginTop: 10, fontSize: 12, opacity: 0.9 }}>
+                      {confirmedGates} gates confirmed · {overriddenGates} overridden · {overrideJournal.length} audit entries
+                    </div>
                   </div>
                 )}
               </>
@@ -1134,6 +1629,74 @@ export function CaseDetailPage() {
             {/* =================== TIMELINE TAB =================== */}
             {activeTab === 'timeline' && (
               <>
+                {/* Override Journal — audit trail */}
+                {overrideJournal.length > 0 && (
+                  <div className="hitl-journal">
+                    <h2 className="govuk-heading-m" style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                      Override Journal
+                      <span style={{ fontSize: 12, fontWeight: 400, background: 'var(--govuk-orange)', color: '#fff', padding: '2px 8px', borderRadius: 2 }}>
+                        {overrideJournal.length} override{overrideJournal.length > 1 ? 's' : ''}
+                      </span>
+                    </h2>
+                    <div className="hitl-journal__entries">
+                      {overrideJournal.map((entry, i) => (
+                        <div key={i} className="hitl-journal__entry">
+                          <div className="hitl-journal__entry-header">
+                            <div className="hitl-journal__entry-gate">
+                              <span className="hitl-journal__entry-icon">&#x270E;</span>
+                              {entry.gate}
+                            </div>
+                            <span className="hitl-journal__entry-time">{entry.timestamp}</span>
+                          </div>
+                          <div className="hitl-journal__entry-body">
+                            <div className="hitl-journal__entry-row">
+                              <span className="hitl-journal__entry-label">AI suggested:</span>
+                              <span className="hitl-journal__entry-value hitl-journal__entry-value--ai">{entry.aiSuggestion}</span>
+                            </div>
+                            <div className="hitl-journal__entry-row">
+                              <span className="hitl-journal__entry-label">Caseworker decided:</span>
+                              <span className="hitl-journal__entry-value hitl-journal__entry-value--cw">{entry.caseworkerDecision}</span>
+                            </div>
+                            <div className="hitl-journal__entry-reason">
+                              <strong>Reason:</strong> {entry.reason}
+                            </div>
+                          </div>
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                )}
+
+                {/* Governance Status Summary */}
+                <div className="hitl-governance-summary">
+                  <h2 className="govuk-heading-m">Governance Status</h2>
+                  <div className="hitl-governance-summary__grid">
+                    {GATE_ORDER.map(key => {
+                      const g = gateStates[key];
+                      return (
+                        <div key={key} className={`hitl-governance-summary__item hitl-governance-summary__item--${g.status}`}>
+                          <div className="hitl-governance-summary__item-icon">
+                            {g.status === 'approved' ? '✓' : g.status === 'overridden' ? '✎' : g.status === 'rejected' ? '✕' : '○'}
+                          </div>
+                          <div>
+                            <div className="hitl-governance-summary__item-label">{GATE_LABELS[key]}</div>
+                            <div className="hitl-governance-summary__item-status">
+                              {g.status === 'pending' ? 'Awaiting review' : `${g.status.charAt(0).toUpperCase() + g.status.slice(1)}${g.timestamp ? ` at ${g.timestamp}` : ''}`}
+                            </div>
+                          </div>
+                        </div>
+                      );
+                    })}
+                  </div>
+                  <div className="hitl-governance-summary__meter">
+                    <div className="hitl-governance-summary__meter-label">Decision readiness</div>
+                    <div className="hitl-governance-summary__meter-bar">
+                      <div className="hitl-governance-summary__meter-fill" style={{ width: `${Math.round((confirmedGates / GATE_ORDER.length) * 100)}%` }} />
+                    </div>
+                    <div className="hitl-governance-summary__meter-pct">{Math.round((confirmedGates / GATE_ORDER.length) * 100)}%</div>
+                  </div>
+                </div>
+
                 <h2 className="govuk-heading-m">Case timeline</h2>
                 <div className="case-timeline">
                   <TimelineEvent title="Challenge submitted" time={caseData.submittedDate} detail={`${caseData.challengeType} — ${caseData.evidence.length} evidence item(s) attached.`} type="completed" />
@@ -1145,6 +1708,10 @@ export function CaseDetailPage() {
                   <TimelineEvent title="Desktop research" time="Seconds later" detail={`Sale history: ${saleHistory.length} records. LR comparables: ${liveComps.length}. AI comparables: ${property.comparables.length}. Decision trail: ${decisionTrail.length} linked data points.`} type="ai" />
                   <TimelineEvent title="Case brief generated" time="Seconds later" detail={`AI confidence: ${confidence}%. Model: ${llmModel || 'pre-generated'}.`} type="ai" />
                   <TimelineEvent title="Caseworker review" time="Now" detail="Case opened by caseworker for review and decision." type="active" />
+                  {overrideJournal.map((entry, i) => (
+                    <TimelineEvent key={`override-${i}`} title={`Override: ${entry.gate}`} time={entry.timestamp}
+                      detail={`Caseworker overrode AI recommendation. Reason: ${entry.reason}`} type="completed" />
+                  ))}
                 </div>
               </>
             )}
@@ -1183,6 +1750,8 @@ export function CaseDetailPage() {
           </div>
         </div>
       )}
+      {/* AI Assistant — available on all tabs */}
+      <AiAssistant caseData={caseData} isOpen={assistantOpen} onToggle={() => setAssistantOpen(!assistantOpen)} />
     </PageLayout>
   );
 }
@@ -1261,5 +1830,66 @@ function FallbackReasoning({ caseData, threshold, property }: { caseData: typeof
       <ReasoningStep num={4} text={`Ownership verified via ${property.ownership.nodes[0]?.source}. Confidence: ${property.ownership.confidence}%.`} verdict="No issues" type="neutral" />
       <ReasoningStep num={5} text={caseData.aiConfidence > 70 ? 'Recommend: maintain current band.' : 'Recommend: desktop valuation before decision.'} verdict={caseData.aiConfidence > 70 ? 'Maintain band' : 'Needs review'} type={caseData.aiConfidence > 70 ? 'against' : 'neutral'} />
     </>
+  );
+}
+
+function HitlActions({ gate, gateState, aiValue, onApprove, onOverride, onReset }: {
+  gate: GateKey;
+  gateState: GateState;
+  aiValue: string;
+  onApprove: (gate: GateKey, aiValue: string) => void;
+  onOverride: (gate: GateKey, aiValue: string) => void;
+  onReset: (gate: GateKey) => void;
+}) {
+  if (gateState.status === 'approved') {
+    return (
+      <div className="hitl-actions hitl-actions--approved">
+        <div className="hitl-actions__stamp">
+          <span className="hitl-actions__stamp-icon">&#x2713;</span>
+          <span>APPROVED by caseworker</span>
+          {gateState.timestamp && <span className="hitl-actions__time">{gateState.timestamp}</span>}
+        </div>
+        <button className="hitl-actions__undo" onClick={() => onReset(gate)}>Undo</button>
+      </div>
+    );
+  }
+  if (gateState.status === 'overridden') {
+    return (
+      <div className="hitl-actions hitl-actions--overridden">
+        <div className="hitl-actions__stamp">
+          <span className="hitl-actions__stamp-icon">&#x270E;</span>
+          <span>OVERRIDDEN by caseworker</span>
+          {gateState.timestamp && <span className="hitl-actions__time">{gateState.timestamp}</span>}
+        </div>
+        {gateState.caseworkerValue && <div className="hitl-actions__override-value">Caseworker assessment: {gateState.caseworkerValue}</div>}
+        {gateState.reason && <div className="hitl-actions__override-reason">Reason: {gateState.reason}</div>}
+        <button className="hitl-actions__undo" onClick={() => onReset(gate)}>Undo</button>
+      </div>
+    );
+  }
+  if (gateState.status === 'rejected') {
+    return (
+      <div className="hitl-actions hitl-actions--rejected">
+        <div className="hitl-actions__stamp">
+          <span className="hitl-actions__stamp-icon">&#x2717;</span>
+          <span>REJECTED by caseworker</span>
+          {gateState.timestamp && <span className="hitl-actions__time">{gateState.timestamp}</span>}
+        </div>
+        <button className="hitl-actions__undo" onClick={() => onReset(gate)}>Undo</button>
+      </div>
+    );
+  }
+  return (
+    <div className="hitl-actions hitl-actions--pending">
+      <div className="hitl-actions__label">Caseworker decision required</div>
+      <div className="hitl-actions__buttons">
+        <button className="govuk-button govuk-button--primary hitl-actions__btn" onClick={() => onApprove(gate, aiValue)}>
+          &#x2713; Approve
+        </button>
+        <button className="govuk-button govuk-button--secondary hitl-actions__btn" onClick={() => onOverride(gate, aiValue)}>
+          &#x270E; Override
+        </button>
+      </div>
+    </div>
   );
 }

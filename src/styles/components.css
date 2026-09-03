@@ -387,10 +387,22 @@
 .cw-map-modal__title { font-size: 18px; font-weight: 700; }
 .cw-map-modal__close { background: none; border: 2px solid white; color: white; padding: 6px 16px; font-size: 14px; font-weight: 700; cursor: pointer; font-family: var(--govuk-font); }
 .cw-map-modal__close:hover { background: rgba(255,255,255,0.15); }
-.cw-map-modal__body { flex: 1; background: white; overflow: hidden; }
+.cw-map-modal__body { flex: 1; background: white; overflow: hidden; position: relative; min-height: 0; display: flex; flex-direction: column; }
 .cw-map-modal__toolbar { display: flex; gap: 8px; }
 .cw-map-modal__toolbar button { background: rgba(255,255,255,0.15); border: 1px solid rgba(255,255,255,0.4); color: white; padding: 4px 12px; font-size: 12px; cursor: pointer; font-family: var(--govuk-font); }
 .cw-map-modal__toolbar button:hover { background: rgba(255,255,255,0.25); }
+
+/* Map info panel (modal sidebar) */
+.cw-map-info-panel { width: 300px; flex-shrink: 0; background: #fff; border-left: 1px solid var(--govuk-mid-grey); overflow-y: auto; font-family: var(--govuk-font); font-size: 12px; }
+.cw-map-info-panel__section { padding: 10px 14px; border-bottom: 1px solid var(--govuk-light-grey); }
+.cw-map-info-panel__title { font-size: 11px; font-weight: 700; color: var(--govuk-dark-blue); text-transform: uppercase; letter-spacing: 0.4px; margin-bottom: 6px; padding-bottom: 4px; border-bottom: 2px solid var(--govuk-blue); }
+.cw-map-info-panel__row { display: flex; justify-content: space-between; align-items: baseline; padding: 3px 0; border-bottom: 1px solid #f3f2f1; font-size: 12px; gap: 8px; }
+.cw-map-info-panel__row span { color: var(--govuk-dark-grey); }
+.cw-map-info-panel__row strong { color: var(--govuk-black); white-space: nowrap; }
+.cw-map-info-panel__tag { display: inline-block; background: var(--govuk-dark-blue); color: #fff; font-size: 9px; font-weight: 700; padding: 1px 4px; border-radius: 2px; vertical-align: middle; margin-left: 3px; }
+.cw-map-info-panel__tag--completed, .cw-map-info-panel__tag--approved { background: var(--govuk-green); }
+.cw-map-info-panel__tag--refused { background: var(--govuk-red); }
+.cw-map-info-panel__tag--pending { background: var(--govuk-orange); }
 
 /* Map expand button */
 .cw-map-expand { position: absolute; top: 10px; left: 10px; z-index: 1000; background: white; border: 1px solid var(--govuk-mid-grey); padding: 6px 10px; font-size: 12px; font-weight: 700; cursor: pointer; box-shadow: 0 2px 6px rgba(0,0,0,0.15); display: flex; align-items: center; gap: 5px; font-family: var(--govuk-font); }

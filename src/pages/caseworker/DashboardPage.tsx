@@ -1,13 +1,23 @@
-import { useState } from 'react';
+import { useState, useCallback } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { PageLayout } from '../../components/layout';
 import { AiPanel, Tag, formatCurrency } from '../../components/common';
 import { CASEWORKER_CASES, DASHBOARD_STATS } from '../../data/properties';
+import { lookupPostcode, getNearbyHighValueSales } from '../../services/api';
+import { buildCaseFromTransaction } from '../../services/caseBuilder';
+import type { LandRegistryTransaction, PostcodeResult } from '../../types';
 
 export function DashboardPage() {
   const navigate = useNavigate();
   const stats = DASHBOARD_STATS;
   const [filter, setFilter] = useState<'all' | 'P1' | 'P2' | 'P3' | 'P4'>('all');
+
+  // Postcode search state
+  const [searchPostcode, setSearchPostcode] = useState('');
+  const [searching, setSearching] = useState(false);
+  const [searchResults, setSearchResults] = useState<LandRegistryTransaction[] | null>(null);
+  const [searchPostcodeData, setSearchPostcodeData] = useState<PostcodeResult | null>(null);
+  const [searchError, setSearchError] = useState<string | null>(null);
 
   const filteredCases = filter === 'all'
     ? CASEWORKER_CASES
@@ -17,10 +27,154 @@ export function DashboardPage() {
     navigate('/caseworker/case', { state: { caseRef: ref } });
   };
 
+  const handlePostcodeSearch = useCallback(async () => {
+    const pc = searchPostcode.trim().toUpperCase();
+    if (!pc) return;
+    setSearching(true);
+    setSearchError(null);
+    setSearchResults(null);
+
+    const postcodeData = await lookupPostcode(pc);
+    if (!postcodeData) {
+      setSearchError(`"${pc}" is not a valid postcode. Enter a full UK postcode (e.g. SW1X 8HG).`);
+      setSearching(false);
+      return;
+    }
+    setSearchPostcodeData(postcodeData);
+
+    const transactions = await getNearbyHighValueSales(postcodeData.postcode);
+    if (transactions.length === 0) {
+      setSearchError(`No properties sold for over £2M found in ${postcodeData.postcode}. This postcode may not have HVCTS-eligible properties, or sales data may predate the Land Registry digital records.`);
+      setSearching(false);
+      return;
+    }
+
+    setSearchResults(transactions);
+    setSearching(false);
+  }, [searchPostcode]);
+
+  const handleOpenDynamicCase = useCallback((tx: LandRegistryTransaction) => {
+    if (!searchPostcodeData) return;
+    const dynamicCase = buildCaseFromTransaction(tx, searchPostcodeData, searchResults || []);
+    navigate('/caseworker/case', { state: { dynamicCase } });
+  }, [searchPostcodeData, searchResults, navigate]);
+
+  const handleSearchKeyDown = (e: React.KeyboardEvent) => {
+    if (e.key === 'Enter') handlePostcodeSearch();
+  };
+
   return (
     <PageLayout wide>
       <span className="govuk-caption-xl">HVCTS Operations</span>
       <h1 className="govuk-heading-xl">Caseworker dashboard</h1>
+
+      {/* Postcode Search */}
+      <div style={{
+        background: '#fff',
+        border: '2px solid #1d70b8',
+        padding: 20,
+        marginBottom: 30,
+      }}>
+        <h2 className="govuk-heading-m" style={{ marginBottom: 8 }}>Property lookup</h2>
+        <p className="govuk-body-s" style={{ color: '#505a5f', marginBottom: 12 }}>
+          Search any UK postcode to find HVCTS-eligible properties (£2M+) from Land Registry records
+        </p>
+        <div style={{ display: 'flex', gap: 8, alignItems: 'flex-start' }}>
+          <div style={{ flex: 1, maxWidth: 300 }}>
+            <input
+              className="govuk-input"
+              type="text"
+              value={searchPostcode}
+              onChange={(e) => setSearchPostcode(e.target.value.toUpperCase())}
+              onKeyDown={handleSearchKeyDown}
+              placeholder="e.g. SW1X 8HG"
+              style={{ width: '100%', fontSize: 16, padding: '8px 10px', textTransform: 'uppercase' }}
+              disabled={searching}
+            />
+          </div>
+          <button
+            className="govuk-button"
+            style={{ margin: 0, minWidth: 140 }}
+            onClick={handlePostcodeSearch}
+            disabled={searching || !searchPostcode.trim()}
+          >
+            {searching ? 'Searching...' : 'Find properties'}
+          </button>
+          {searchResults && (
+            <button
+              className="govuk-button govuk-button--secondary"
+              style={{ margin: 0 }}
+              onClick={() => { setSearchResults(null); setSearchPostcode(''); setSearchError(null); }}
+            >
+              Clear
+            </button>
+          )}
+        </div>
+
+        {searchError && (
+          <div style={{ marginTop: 12, padding: '10px 14px', background: '#fef7f7', borderLeft: '4px solid #d4351c', fontSize: 14 }}>
+            {searchError}
+          </div>
+        )}
+
+        {searchResults && searchResults.length > 0 && (
+          <div style={{ marginTop: 16 }}>
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'baseline', marginBottom: 8 }}>
+              <h3 className="govuk-heading-s" style={{ margin: 0 }}>
+                {searchResults.length} HVCTS-eligible propert{searchResults.length === 1 ? 'y' : 'ies'} in {searchPostcodeData?.postcode}
+              </h3>
+              <span style={{ fontSize: 13, color: '#505a5f' }}>
+                {searchPostcodeData?.admin_district} · {searchPostcodeData?.region}
+              </span>
+            </div>
+            <div style={{ border: '1px solid #b1b4b6' }}>
+              {searchResults.map((tx, i) => {
+                const band = tx.price >= 20_000_000 ? 'H5' : tx.price >= 10_000_000 ? 'H4' : tx.price >= 5_000_000 ? 'H3' : tx.price >= 2_500_000 ? 'H2' : 'H1';
+                return (
+                  <div
+                    key={i}
+                    onClick={() => handleOpenDynamicCase(tx)}
+                    style={{
+                      padding: '12px 16px',
+                      borderBottom: i < searchResults.length - 1 ? '1px solid #f3f2f1' : 'none',
+                      cursor: 'pointer',
+                      display: 'flex',
+                      alignItems: 'center',
+                      gap: 12,
+                      transition: 'background 0.15s',
+                    }}
+                    onMouseEnter={(e) => (e.currentTarget.style.background = '#f3f2f1')}
+                    onMouseLeave={(e) => (e.currentTarget.style.background = 'transparent')}
+                  >
+                    <div style={{
+                      width: 6, height: 40, borderRadius: 3, flexShrink: 0,
+                      background: band === 'H5' ? '#d4351c' : band === 'H4' ? '#f47738' : band === 'H3' ? '#ffdd00' : '#1d70b8',
+                    }} />
+                    <div style={{ flex: 1 }}>
+                      <div style={{ fontWeight: 700, fontSize: 15 }}>{tx.address}</div>
+                      <div style={{ fontSize: 13, color: '#505a5f' }}>
+                        {tx.postcode} · {tx.estateType} · {tx.propertyType || 'Unknown type'} · Sold {tx.date}
+                      </div>
+                    </div>
+                    <div style={{ textAlign: 'right', flexShrink: 0 }}>
+                      <div style={{ fontWeight: 700, fontSize: 16 }}>{formatCurrency(tx.price)}</div>
+                      <Tag color={band === 'H5' ? 'red' : band === 'H4' ? 'orange' : band === 'H3' ? 'yellow' : 'default'}>
+                        Band {band}
+                      </Tag>
+                    </div>
+                    <div style={{ fontSize: 13, color: '#1d70b8', fontWeight: 700, flexShrink: 0, width: 80, textAlign: 'right' }}>
+                      Open case &rsaquo;
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
+            <p className="govuk-body-s" style={{ color: '#505a5f', marginTop: 8 }}>
+              Source: HM Land Registry Price Paid Data. Click any property to open as an HVCTS case with full AI analysis.
+            </p>
+          </div>
+        )}
+      </div>
 
       {/* Stats */}
       <div className="case-stats">

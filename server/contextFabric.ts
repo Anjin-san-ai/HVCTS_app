@@ -226,7 +226,8 @@ export type ContextOperation =
   | 'ownership-analysis'
   | 'dlm-assessment'
   | 'decision-letter'
-  | 'pattern-analysis';
+  | 'pattern-analysis'
+  | 'case-assistant';
 
 export interface CaseContext {
   reference: string;
@@ -362,6 +363,28 @@ function buildSystemPrompt(operation: ContextOperation, caseCtx?: CaseContext): 
 2. Assess whether patterns indicate data quality issues vs genuine disputes
 3. Recommend operational actions
 4. Estimate the number of properties potentially affected`);
+      break;
+
+    case 'case-assistant':
+      layers.push('--- DOMAIN CONTEXT: CASEWORKER AI ASSISTANT ---');
+      layers.push(HVCTS_LEGISLATION);
+      layers.push(BAND_THRESHOLDS);
+      layers.push(DLM_RULES);
+      layers.push(EVIDENCE_RUBRIC);
+      layers.push(OWNERSHIP_RULES);
+      layers.push(CHALLENGE_PROCEDURE);
+      layers.push(`\nYou are a real-time AI assistant helping a caseworker investigate an active HVCTS case.
+The caseworker can ask you anything about this case — valuation reasoning, ownership questions,
+evidence strength, comparable analysis, DLM implications, appeal risk, or next steps.
+
+RULES:
+- Answer the specific question asked. Do not repeat the full case brief.
+- Be concise and direct. The caseworker is experienced — no hand-holding.
+- If asked for analysis, cite specific numbers and data points from the case.
+- If asked about procedure, reference the specific HVCTS rules that apply.
+- If the question requires data you do not have, say so and suggest how to obtain it.
+- Never say "as an AI" or "I cannot" — just answer the question or state what is unknown.
+- IMPORTANT: Respond in plain text only. Never wrap your answer in JSON or code blocks. Use numbered lists or bullet points for lists. Keep it under 300 words unless the question requires more.`);
       break;
   }
 

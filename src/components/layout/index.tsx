@@ -22,29 +22,34 @@ const CW_SCREENS = [
 export function PrototypeNav() {
   const location = useLocation();
   const navigate = useNavigate();
+  const isCwRoute = location.pathname.startsWith('/caseworker');
   return (
-    <nav className="prototype-nav">
-      <span className="prototype-nav__label">PROTOTYPE</span>
-      {SCREENS.map((s) => (
-        <button
-          key={s.path}
-          className={`prototype-nav__btn${location.pathname === s.path ? ' prototype-nav__btn--active' : ''}`}
-          onClick={() => navigate(s.path)}
-        >
-          {s.label}
-        </button>
-      ))}
-      <div className="prototype-nav__divider" />
-      {CW_SCREENS.map((s) => (
-        <button
-          key={s.path}
-          className={`prototype-nav__btn${location.pathname === s.path ? ' prototype-nav__btn--active' : ''}`}
-          onClick={() => navigate(s.path)}
-        >
-          {s.label}
-        </button>
-      ))}
-    </nav>
+    <div className="prototype-nav-wrapper">
+      <nav className={`prototype-nav prototype-nav--citizen${!isCwRoute ? ' prototype-nav--current' : ''}`}>
+        <span className="prototype-nav__label">CITIZEN JOURNEY</span>
+        {SCREENS.map((s) => (
+          <button
+            key={s.path}
+            className={`prototype-nav__btn${location.pathname === s.path ? ' prototype-nav__btn--active' : ''}`}
+            onClick={() => navigate(s.path)}
+          >
+            {s.label}
+          </button>
+        ))}
+      </nav>
+      <nav className={`prototype-nav prototype-nav--caseworker${isCwRoute ? ' prototype-nav--current' : ''}`}>
+        <span className="prototype-nav__label">CASEWORKER</span>
+        {CW_SCREENS.map((s) => (
+          <button
+            key={s.path}
+            className={`prototype-nav__btn prototype-nav__btn--cw${location.pathname === s.path ? ' prototype-nav__btn--active' : ''}`}
+            onClick={() => navigate(s.path)}
+          >
+            {s.label}
+          </button>
+        ))}
+      </nav>
+    </div>
   );
 }
 
@@ -77,11 +82,8 @@ export function Footer() {
   return (
     <footer className="govuk-footer">
       <div className="govuk-footer__meta">
-        <div>
-          <p>HVCTS AI-Augmented Prototype — Cognizant × HMRC × VOA</p>
-          <p style={{ marginTop: 5 }}>Built with GOV.UK Design System patterns. Property data from HM Land Registry. For demonstration purposes only.</p>
-        </div>
-        <img src="/Cognizantlogo.png" alt="Cognizant" className="footer-logo" />
+        <p>HVCTS AI-Augmented Prototype — Cognizant × HMRC × VOA</p>
+        <p style={{ marginTop: 5 }}>Built with GOV.UK Design System patterns. Property data from HM Land Registry. For demonstration purposes only.</p>
       </div>
     </footer>
   );

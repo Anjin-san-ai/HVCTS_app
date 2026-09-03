@@ -34,3 +34,6 @@ azure-secrets.local.txt
 *.njsproj
 *.sln
 *.sw?
+
+# Uncompressed source for server/building-cache.json.gz (regenerate with gzip -9)
+server/building-cache.json

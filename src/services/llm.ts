@@ -1,10 +1,6 @@
 import type { CaseworkerCase } from '../types';
 
-// Relative by default: in Azure the Static Web App proxies /api/* to the
-// linked App Service backend, so the API is same-origin. Override with
-// VITE_API_BASE_URL only for the cross-origin fallback described in
-// docs/DEPLOYMENT.md.
-const API_BASE = import.meta.env.VITE_API_BASE_URL || '/api/ai';
+const API_BASE = '/api/ai';
 
 interface AiResponse<T = Record<string, unknown>> {
   success: boolean;
@@ -118,4 +114,12 @@ export async function fetchDecision(caseData: CaseworkerCase): Promise<AiRespons
 
 export async function fetchDecisionLetter(caseData: CaseworkerCase, decision: string): Promise<AiResponse<DecisionLetterData>> {
   return post<DecisionLetterData>('/decision-letter', { ...buildCasePayload(caseData), decision });
+}
+
+export interface AssistantData {
+  answer: string;
+}
+
+export async function fetchAssistant(caseData: CaseworkerCase, question: string, conversationHistory?: string): Promise<AiResponse<AssistantData>> {
+  return post<AssistantData>('/assistant', { ...buildCasePayload(caseData), question, conversationHistory });
 }

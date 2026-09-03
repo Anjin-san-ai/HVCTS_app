@@ -42,16 +42,14 @@ export async function callLlm(
 
   const deployment = process.env.AZURE_OPENAI_DEPLOYMENT_NAME!;
   const systemPrompt = buildSystemPrompt(operation, caseCtx);
-  const temperature = options?.temperature ?? 0.2;
-  const maxTokens = options?.maxTokens ?? 2000;
-
-  // Reasoning models (gpt-5.x) reject `max_tokens` in favour of
-  // `max_completion_tokens`, and reject any `temperature` other than the
-  // default of 1. Reasoning tokens are also billed against
-  // max_completion_tokens, so the caller's output budget needs headroom on
-  // top or the response comes back truncated and empty.
-  const supportsTemperature = process.env.AZURE_OPENAI_SUPPORTS_TEMPERATURE === 'true';
+  // Reasoning models (o-series / gpt-5.5) use internal reasoning tokens that count
+  // against max_completion_tokens, so the caller's visible-output budget needs
+  // headroom on top or the response comes back truncated and empty. They also
+  // reject any `temperature` other than the default, hence the opt-in flag.
+  const visibleTokens = Math.max(options?.maxTokens ?? 2000, 3000);
   const reasoningAllowance = parseInt(process.env.AZURE_OPENAI_REASONING_ALLOWANCE || '4000', 10);
+  const maxTokens = visibleTokens + reasoningAllowance;
+  const supportsTemperature = process.env.AZURE_OPENAI_SUPPORTS_TEMPERATURE === 'true';
 
   const response = await azureClient.chat.completions.create({
     model: deployment,
@@ -59,21 +57,25 @@ export async function callLlm(
       { role: 'system', content: systemPrompt },
       { role: 'user', content: userMessage },
     ],
-    max_completion_tokens: maxTokens + reasoningAllowance,
-    ...(supportsTemperature ? { temperature } : {}),
+    max_completion_tokens: maxTokens,
+    ...(supportsTemperature ? { temperature: options?.temperature ?? 0.2 } : {}),
     ...(options?.jsonMode ? { response_format: { type: 'json_object' } } : {}),
   });
 
   const choice = response.choices[0];
-  const content = choice?.message?.content || '';
+  let content = choice?.message?.content || '';
 
-  // A reasoning model can burn the whole budget before emitting anything.
-  // Fail loudly rather than returning an empty brief to the caseworker.
-  if (!content && choice?.finish_reason === 'length') {
-    throw new Error(
-      `Model output truncated before producing content (max_completion_tokens=${maxTokens + reasoningAllowance}). ` +
-        'Increase AZURE_OPENAI_REASONING_ALLOWANCE.',
-    );
+  if (!content && choice) {
+    const msg = choice.message as unknown as Record<string, unknown>;
+    console.log(`[llm] Empty content. finish_reason=${choice.finish_reason}, keys=${Object.keys(msg || {}).join(',')}, tokens=${response.usage?.completion_tokens}`);
+    if (msg?.refusal) {
+      content = `The model declined to respond: ${String(msg.refusal)}`;
+    } else if (choice.finish_reason === 'length') {
+      console.log(`[llm] Truncated at max_completion_tokens=${maxTokens}. Raise AZURE_OPENAI_REASONING_ALLOWANCE if this persists.`);
+      content = 'The response was too long to complete. Please try a more specific question.';
+    } else {
+      content = 'The model produced reasoning but no visible output. Please try again or rephrase your question.';
+    }
   }
 
   let parsed: Record<string, unknown> | undefined;
@@ -210,6 +212,18 @@ export async function analyseOwnership(caseCtx: CaseContext): Promise<LlmRespons
 }`,
     caseCtx,
     { temperature: 0.15, maxTokens: 1200, jsonMode: true },
+  );
+}
+
+export async function askAssistant(caseCtx: CaseContext, question: string, conversationHistory?: string): Promise<LlmResponse> {
+  const contextualQuestion = conversationHistory
+    ? `Previous conversation:\n${conversationHistory}\n\nNew question: ${question}`
+    : question;
+  return callLlm(
+    'case-assistant',
+    contextualQuestion,
+    caseCtx,
+    { maxTokens: 4000, jsonMode: false },
   );
 }
 

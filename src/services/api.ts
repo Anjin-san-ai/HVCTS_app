@@ -116,3 +116,18 @@ export async function getComparableSales(street: string, town = 'LONDON'): Promi
     pageSize: 8,
   });
 }
+
+export async function getNearbyTransactions(postcode: string): Promise<LandRegistryTransaction[]> {
+  const outwardCode = postcode.split(' ')[0];
+  const [fullPc, outward] = await Promise.all([
+    searchLandRegistry({ postcode, pageSize: 30 }),
+    searchLandRegistry({ postcode: outwardCode, pageSize: 50 }),
+  ]);
+  const seen = new Set<string>();
+  const merged: LandRegistryTransaction[] = [];
+  for (const tx of [...fullPc, ...outward]) {
+    const key = `${tx.address}|${tx.date}|${tx.price}`;
+    if (!seen.has(key)) { seen.add(key); merged.push(tx); }
+  }
+  return merged;
+}

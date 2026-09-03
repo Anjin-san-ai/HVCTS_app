@@ -52,6 +52,8 @@ export interface PlanningApplication {
   dateReceived: string;
   address: string;
   type: 'full' | 'householder' | 'listed-building' | 'change-of-use';
+  lat?: number;
+  lng?: number;
 }
 
 export interface SchoolResult {
@@ -59,11 +61,12 @@ export interface SchoolResult {
   type: 'primary' | 'secondary' | 'independent';
   distance: number;
   ofstedRating: 'Outstanding' | 'Good' | 'Requires Improvement' | 'Inadequate';
+  lat: number;
+  lng: number;
 }
 
 // ── Helpers ─────────────────────────────────────────────────────────────────
 
-const EPC_API = 'https://epc.opendatacommunities.org/api/v1/domestic/search';
 const FLOOD_API = 'https://environment.data.gov.uk/flood-monitoring/id/floodAreas';
 const CRIME_API = 'https://data.police.uk/api/crimes-street/all-crime';
 const POSTCODES_API = 'https://api.postcodes.io/postcodes';
@@ -79,14 +82,12 @@ function timeoutSignal(): AbortSignal {
 // ── 1. EPC data ─────────────────────────────────────────────────────────────
 
 export async function fetchEpcData(postcode: string): Promise<EpcRecord[]> {
+  // Try backend proxy first (avoids CORS), fall back to direct call
+  const encoded = encodeURIComponent(postcode.trim());
   try {
-    const encoded = encodeURIComponent(postcode.trim());
     const res = await fetch(
-      `${EPC_API}?postcode=${encoded}&size=10`,
-      {
-        headers: { Accept: 'application/json' },
-        signal: timeoutSignal(),
-      },
+      `/api/epc?postcode=${encoded}`,
+      { signal: timeoutSignal() },
     );
     if (!res.ok) return [];
     const data = await res.json();
@@ -630,6 +631,12 @@ export async function fetchPlanningData(
         const startDate = String(entity['start-date'] ?? entity['entry-date'] ?? '');
         const isListedBuilding = dataset.includes('listed-building');
 
+        let eLat: number | undefined;
+        let eLng: number | undefined;
+        const pointStr = String(entity.point ?? '');
+        const wktMatch = pointStr.match(/POINT\(([-.0-9]+)\s+([-.0-9]+)\)/);
+        if (wktMatch) { eLng = parseFloat(wktMatch[1]); eLat = parseFloat(wktMatch[2]); }
+
         results.push({
           reference: ref,
           description: isListedBuilding
@@ -639,6 +646,8 @@ export async function fetchPlanningData(
           dateReceived: startDate || 'Pre-2000',
           address: name,
           type: isListedBuilding ? 'listed-building' as const : 'full' as const,
+          lat: eLat,
+          lng: eLng,
         });
       }
     } catch {
@@ -656,6 +665,12 @@ export async function fetchPlanningData(
         const data = await res.json();
         const entities: Record<string, unknown>[] = data?.entities ?? [];
         for (const entity of entities) {
+          let eLat: number | undefined;
+          let eLng: number | undefined;
+          const pointStr = String(entity.point ?? '');
+          const wktMatch = pointStr.match(/POINT\(([-.0-9]+)\s+([-.0-9]+)\)/);
+          if (wktMatch) { eLng = parseFloat(wktMatch[1]); eLat = parseFloat(wktMatch[2]); }
+
           results.push({
             reference: String(entity.reference ?? entity.entity ?? ''),
             description: `Listed building: ${String(entity.name ?? 'Unknown')}`,
@@ -663,6 +678,8 @@ export async function fetchPlanningData(
             dateReceived: String(entity['start-date'] ?? ''),
             address: String(entity.name ?? ''),
             type: 'listed-building' as const,
+            lat: eLat,
+            lng: eLng,
           });
         }
       }
@@ -720,6 +737,8 @@ export async function fetchSchoolData(lat: number, lng: number): Promise<SchoolR
         type,
         distance: parseFloat(dist.toFixed(2)),
         ofstedRating: 'Good',
+        lat: elLat,
+        lng: elLng,
       });
     }
 
