@@ -106,12 +106,13 @@ Full deployment configuration (Azure, GitHub Actions, secrets) is in
 ```
 server/            Express API — routes, security middleware, Azure OpenAI client, domain prompts
 src/
+  pages/LoginPage   Static demo sign-in gate (see caveats below)
   pages/customer/   9-step customer journey
   pages/caseworker/ Dashboard + case detail
-  components/       ResearchMap (Leaflet), layout (Header/Footer/Nav), common
+  components/       ResearchMap (Leaflet), layout (Header/Footer/Nav), common, RequireAuth
   services/         llm.ts (backend AI calls), api.ts + publicData.ts (public UK data)
   data/             Mock property/case data
-  stores/           Zustand app state
+  stores/           Zustand app state (appStore) + demo sign-in state (authStore)
 infra/              Bicep IaC + one-time Azure setup script
 .github/workflows/  CI/CD to Azure on push to main
 ```
@@ -122,7 +123,15 @@ infra/              Bicep IaC + one-time Azure setup script
   for mock data, but a real-data deployment would need a UK South Azure
   OpenAI resource to meet the sovereignty constraint stated in
   `../solution-architecture.md`.
-- No authentication in the app itself — access control is provided entirely
-  by the Azure Static Web Apps Entra ID sign-in gate at the infrastructure
-  layer.
+- **The in-app sign-in screen is a static demo gate, not authentication.**
+  `/login` compares one fixed credential pair (`HVCTS_POC` / `C0gn1z4nt`)
+  client-side, so the pair is compiled into the JavaScript bundle in plaintext
+  and is readable by anyone with devtools. It keeps a casual visitor out of the
+  walkthrough; it does not protect anything. Real access control is the Azure
+  Static Web Apps Entra ID sign-in gate at the infrastructure layer (see
+  `docs/DEPLOYMENT.md`), which is currently unconfigured on this deployment.
+- The Express API has no session or user model of its own — `REQUIRE_SWA_AUTH`
+  only checks that *a* signed-in Static Web Apps principal reached it, and the
+  `/login` screen above is client-only, so it grants the browser nothing the
+  API can verify.
 - No automated tests exist yet.

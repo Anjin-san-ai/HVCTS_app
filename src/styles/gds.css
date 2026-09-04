@@ -63,12 +63,23 @@ a:hover { color: #003078; }
 .govuk-header__logo { display: flex; align-items: center; gap: 8px; }
 .govuk-header__crown { width: 36px; height: 32px; }
 .govuk-header__logotype-text { color: var(--govuk-white); font-size: 30px; font-weight: 700; }
+.govuk-header__nav { display: flex; align-items: center; gap: 20px; }
 .govuk-header__nav a { color: var(--govuk-white); text-decoration: none; font-size: 19px; font-weight: 700; }
 .govuk-header__nav a:hover { text-decoration: underline; }
+/* Sign out is a button (it mutates state) but must read as the link beside it. */
+.govuk-header__signout {
+  background: none; border: none; padding: 0; cursor: pointer;
+  color: var(--govuk-white); font-family: var(--govuk-font); font-size: 19px; font-weight: 700;
+  text-decoration: underline;
+}
+.govuk-header__signout:hover { text-decoration: none; }
+.govuk-header__signout:focus { outline: 3px solid var(--govuk-focus); outline-offset: 2px; }
 
 /* === Footer === */
 .govuk-footer { background: var(--govuk-light-grey); border-top: 1px solid var(--govuk-mid-grey); padding: 30px 0; margin-top: 60px; }
-.govuk-footer__meta { max-width: none; margin: 0 auto; padding: 0 30px; font-size: 16px; color: var(--govuk-dark-grey); }
+.govuk-footer__meta { max-width: none; margin: 0 auto; padding: 0 30px; font-size: 16px; color: var(--govuk-dark-grey); display: flex; align-items: flex-end; justify-content: space-between; gap: 30px; flex-wrap: wrap; }
+/* Light footer background, so the logo goes in as-is with no invert filter. */
+.cognizant-footer-logo { height: 22px; width: auto; flex-shrink: 0; }
 
 /* === Typography === */
 .govuk-heading-xl { font-size: 48px; font-weight: 700; line-height: 1.04; margin-bottom: 30px; }
@@ -79,6 +90,7 @@ a:hover { color: #003078; }
 .govuk-body-s { font-size: 16px; margin-bottom: 15px; }
 .govuk-body-l { font-size: 24px; margin-bottom: 20px; }
 .govuk-caption-xl { font-size: 27px; color: var(--govuk-dark-grey); display: block; margin-bottom: 5px; }
+.govuk-caption-l { font-size: 24px; color: var(--govuk-dark-grey); display: block; margin-bottom: 5px; }
 .govuk-link { color: var(--govuk-blue); text-decoration: underline; cursor: pointer; }
 .govuk-link:hover { color: #003078; }
 .govuk-section-break { margin: 0; border: none; }
@@ -106,6 +118,12 @@ a:hover { color: #003078; }
 
 /* === Forms === */
 .govuk-form-group { margin-bottom: 20px; }
+.govuk-form-group--error { border-left: 5px solid var(--govuk-red); padding-left: 15px; }
+.govuk-form-group--error .govuk-input,
+.govuk-form-group--error .govuk-textarea,
+.govuk-form-group--error .govuk-select { border-color: var(--govuk-red); }
+.govuk-fieldset { border: none; padding: 0; margin: 0; min-width: 0; }
+.govuk-fieldset__legend { font-size: 19px; font-weight: 700; margin-bottom: 15px; padding: 0; }
 .govuk-label { display: block; font-size: 19px; font-weight: 700; margin-bottom: 5px; }
 .govuk-hint { font-size: 16px; color: var(--govuk-dark-grey); margin-bottom: 10px; }
 .govuk-input { font-size: 19px; padding: 5px 10px; border: 2px solid var(--govuk-black); width: 100%; font-family: var(--govuk-font); }
@@ -114,6 +132,9 @@ a:hover { color: #003078; }
 .govuk-textarea { font-size: 19px; padding: 5px 10px; border: 2px solid var(--govuk-black); width: 100%; font-family: var(--govuk-font); resize: vertical; }
 .govuk-file-upload { font-size: 19px; padding: 5px; }
 .govuk-error-message { color: var(--govuk-red); font-size: 19px; font-weight: 700; margin-bottom: 10px; }
+.govuk-error-summary { border: 5px solid var(--govuk-red); padding: 15px 20px; margin-bottom: 30px; }
+.govuk-error-summary__title { font-size: 24px; font-weight: 700; margin-bottom: 10px; }
+.govuk-error-summary__body { font-size: 19px; font-weight: 700; color: var(--govuk-red); margin: 0; }
 
 /* === Radios === */
 .govuk-radios { display: flex; flex-direction: column; gap: 15px; margin-bottom: 30px; }

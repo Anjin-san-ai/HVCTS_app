@@ -1,6 +1,7 @@
 import { Link, useLocation, useNavigate } from 'react-router-dom';
 import type { ReactNode } from 'react';
 import crownSvg from '../../assets/govuk-crest.svg';
+import { useAuthStore } from '../../stores/authStore';
 
 const SCREENS = [
   { path: '/', label: '1. Start' },
@@ -54,6 +55,16 @@ export function PrototypeNav() {
 }
 
 export function Header() {
+  const navigate = useNavigate();
+  const isAuthenticated = useAuthStore((s) => s.isAuthenticated);
+  const signOut = useAuthStore((s) => s.signOut);
+
+  const handleSignOut = () => {
+    signOut();
+    // replace, so browser-Back can't land on a page behind the login gate.
+    navigate('/login', { replace: true });
+  };
+
   return (
     <header className="govuk-header">
       <div className="govuk-header__container">
@@ -63,6 +74,11 @@ export function Header() {
         </div>
         <nav className="govuk-header__nav">
           <Link to="/">HVCTS Service</Link>
+          {isAuthenticated && (
+            <button type="button" className="govuk-header__signout" onClick={handleSignOut}>
+              Sign out
+            </button>
+          )}
         </nav>
       </div>
     </header>
@@ -82,8 +98,11 @@ export function Footer() {
   return (
     <footer className="govuk-footer">
       <div className="govuk-footer__meta">
-        <p>HVCTS AI-Augmented Prototype — Cognizant × HMRC × VOA</p>
-        <p style={{ marginTop: 5 }}>Built with GOV.UK Design System patterns. Property data from HM Land Registry. For demonstration purposes only.</p>
+        <div>
+          <p>HVCTS AI-Augmented Prototype — Cognizant × HMRC × VOA</p>
+          <p style={{ marginTop: 5 }}>Built with GOV.UK Design System patterns. Property data from HM Land Registry. For demonstration purposes only.</p>
+        </div>
+        <img className="cognizant-footer-logo" src="/Cognizantlogo.png" alt="Cognizant" />
       </div>
     </footer>
   );
