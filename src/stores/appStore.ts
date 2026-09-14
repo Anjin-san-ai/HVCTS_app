@@ -8,7 +8,9 @@ interface AppState {
   postcodeInfo: { district: string; region: string; lat: number; lng: number } | null;
   selectedProperty: Property | null;
   challenge: ChallengeState;
+  viewMode: 'form' | 'chat';
 
+  setViewMode: (mode: 'form' | 'chat') => void;
   setSearchPostcode: (postcode: string) => void;
   setSearchResults: (results: Property[]) => void;
   setIsSearching: (loading: boolean) => void;
@@ -39,7 +41,9 @@ export const useAppStore = create<AppState>((set, get) => ({
   postcodeInfo: null,
   selectedProperty: null,
   challenge: { ...INITIAL_CHALLENGE },
+  viewMode: 'form',
 
+  setViewMode: (mode) => set({ viewMode: mode }),
   setSearchPostcode: (postcode) => set({ searchPostcode: postcode }),
   setSearchResults: (results) => set({ searchResults: results }),
   setIsSearching: (loading) => set({ isSearching: loading }),

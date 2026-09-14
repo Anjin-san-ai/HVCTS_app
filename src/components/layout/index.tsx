@@ -2,6 +2,7 @@ import { Link, useLocation, useNavigate } from 'react-router-dom';
 import type { ReactNode } from 'react';
 import crownSvg from '../../assets/govuk-crest.svg';
 import { useAuthStore } from '../../stores/authStore';
+import { useAppStore } from '../../stores/appStore';
 
 const SCREENS = [
   { path: '/', label: '1. Start' },
@@ -13,6 +14,7 @@ const SCREENS = [
   { path: '/evidence', label: '7. Evidence' },
   { path: '/review', label: '8. Review' },
   { path: '/confirmation', label: '9. Confirmed' },
+  { path: '/chat', label: 'Chat (alt)' },
 ];
 
 const CW_SCREENS = [
@@ -54,15 +56,34 @@ export function PrototypeNav() {
   );
 }
 
+const CITIZEN_FORM_ROUTES = new Set([
+  '/', '/search', '/results', '/property', '/liability', '/challenge', '/evidence', '/review', '/confirmation',
+]);
+
 export function Header() {
   const navigate = useNavigate();
+  const location = useLocation();
   const isAuthenticated = useAuthStore((s) => s.isAuthenticated);
   const signOut = useAuthStore((s) => s.signOut);
+  const viewMode = useAppStore((s) => s.viewMode);
+  const setViewMode = useAppStore((s) => s.setViewMode);
 
   const handleSignOut = () => {
     signOut();
     // replace, so browser-Back can't land on a page behind the login gate.
     navigate('/login', { replace: true });
+  };
+
+  const isCitizenRoute = CITIZEN_FORM_ROUTES.has(location.pathname) || location.pathname === '/chat';
+
+  const handleToggleView = () => {
+    if (viewMode === 'form') {
+      setViewMode('chat');
+      navigate('/chat');
+    } else {
+      setViewMode('form');
+      navigate('/');
+    }
   };
 
   return (
@@ -74,6 +95,11 @@ export function Header() {
         </div>
         <nav className="govuk-header__nav">
           <Link to="/">HVCTS Service</Link>
+          {isAuthenticated && isCitizenRoute && (
+            <button type="button" className="govuk-header__signout" onClick={handleToggleView} style={{ marginRight: 12 }}>
+              {viewMode === 'form' ? 'Try the chat assistant' : 'Switch to form view'}
+            </button>
+          )}
           {isAuthenticated && (
             <button type="button" className="govuk-header__signout" onClick={handleSignOut}>
               Sign out

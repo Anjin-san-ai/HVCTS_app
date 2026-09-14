@@ -11,10 +11,17 @@ The app has two journeys:
 - **Customer** (`/`, `/search`, `/results`, `/property`, `/liability`,
   `/challenge`, `/evidence`, `/review`, `/confirmation`) — a property owner
   searches their property, sees its HVCTS band and liability, and can
-  challenge the valuation with evidence.
+  challenge the valuation with evidence. A "Try the chat assistant" toggle
+  in the header switches to `/chat`, an alternative conversational version
+  of the same journey (`src/pages/customer/ChatPage.tsx`) — it reads/writes
+  the same Zustand store as the form, so progress carries over either way.
 - **Caseworker** (`/caseworker`, `/caseworker/case`) — a VOA caseworker
   triages cases and gets AI-generated case briefs, desktop research,
   evidence assessment, decision recommendations, and draft decision letters.
+  The dashboard also runs a client-side auto-triage rule
+  (`src/services/triage.ts`) that closes low-complexity, high-AI-confidence
+  cases automatically — shown in a separate "Auto-resolved by AI" section,
+  reopenable by the caseworker.
 
 This is a **prototype with mock case data** (`src/data/properties.ts`), not
 the production HVCTS system described in the wider design documents (see
@@ -107,12 +114,12 @@ Full deployment configuration (Azure, GitHub Actions, secrets) is in
 server/            Express API — routes, security middleware, Azure OpenAI client, domain prompts
 src/
   pages/LoginPage   Static demo sign-in gate (see caveats below)
-  pages/customer/   9-step customer journey
-  pages/caseworker/ Dashboard + case detail
-  components/       ResearchMap (Leaflet), layout (Header/Footer/Nav), common, RequireAuth
-  services/         llm.ts (backend AI calls), api.ts + publicData.ts (public UK data)
+  pages/customer/   9-step customer journey, plus ChatPage.tsx (conversational alternative)
+  pages/caseworker/ Dashboard (incl. auto-triage section) + case detail
+  components/       ResearchMap (Leaflet), layout (Header/Footer/Nav, view-mode toggle), common, RequireAuth
+  services/         llm.ts (backend AI calls, incl. chat-intake), api.ts + publicData.ts (public UK data), triage.ts (auto-triage rule)
   data/             Mock property/case data
-  stores/           Zustand app state (appStore) + demo sign-in state (authStore)
+  stores/           Zustand app state (appStore, incl. viewMode) + demo sign-in state (authStore)
 infra/              Bicep IaC + one-time Azure setup script
 .github/workflows/  CI/CD to Azure on push to main
 ```

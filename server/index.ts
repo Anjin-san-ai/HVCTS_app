@@ -16,6 +16,7 @@ import {
   analyseOwnership,
   assessDlmImpact,
   askAssistant,
+  runChatIntake,
 } from './llmService.js';
 import type { CaseContext } from './contextFabric.js';
 import { corsOptions, decodeSwaPrincipal, rateLimit, requireSwaPrincipal } from './security.js';
@@ -213,6 +214,24 @@ app.post('/api/ai/assistant', async (req, res) => {
     res.json({ success: true, data: { answer: result.content }, model: result.model, tokens: result.tokensUsed });
   } catch (err: unknown) {
     fail('assistant', err, res);
+  }
+});
+
+app.post('/api/ai/chat-intake', async (req, res) => {
+  try {
+    const messages = Array.isArray(req.body.messages) ? req.body.messages.slice(-20) : [];
+    const stateSummary = str(req.body.stateSummary);
+    const transcript = messages
+      .map((m: unknown) => {
+        const msg = m as Record<string, unknown>;
+        return `${str(msg.role) === 'user' ? 'Citizen' : 'Assistant'}: ${str(msg.text)}`;
+      })
+      .join('\n');
+    const userMessage = `Current known state:\n${stateSummary || 'None yet.'}\n\nConversation so far:\n${transcript}\n\nRespond with the next assistant message and any field updates, following the JSON schema in your instructions.`;
+    const result = await runChatIntake(userMessage);
+    res.json({ success: true, data: result.parsed || { raw: result.content }, model: result.model, tokens: result.tokensUsed });
+  } catch (err: unknown) {
+    fail('chat-intake', err, res);
   }
 });
 

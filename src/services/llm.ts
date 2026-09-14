@@ -1,4 +1,4 @@
-import type { CaseworkerCase } from '../types';
+import type { CaseworkerCase, ChallengeReason, ChatMessage } from '../types';
 
 const API_BASE = '/api/ai';
 
@@ -122,4 +122,22 @@ export interface AssistantData {
 
 export async function fetchAssistant(caseData: CaseworkerCase, question: string, conversationHistory?: string): Promise<AiResponse<AssistantData>> {
   return post<AssistantData>('/assistant', { ...buildCasePayload(caseData), question, conversationHistory });
+}
+
+export interface ChatIntakeUpdates {
+  postcode?: string;
+  selectAddress?: string;
+  reason?: ChallengeReason;
+  notes?: string;
+  addDemoEvidence?: boolean;
+}
+
+export interface ChatIntakeData {
+  reply: string;
+  updates?: ChatIntakeUpdates;
+  done?: boolean;
+}
+
+export async function fetchChatIntake(messages: ChatMessage[], stateSummary: string): Promise<AiResponse<ChatIntakeData>> {
+  return post<ChatIntakeData>('/chat-intake', { messages, stateSummary });
 }

@@ -9,6 +9,7 @@ import { ResultsPage } from './pages/customer/ResultsPage';
 import { PropertyPage } from './pages/customer/PropertyPage';
 import { LiabilityPage } from './pages/customer/LiabilityPage';
 import { ChallengePage } from './pages/customer/ChallengePage';
+import { ChatPage } from './pages/customer/ChatPage';
 import { EvidencePage } from './pages/customer/EvidencePage';
 import { ReviewPage } from './pages/customer/ReviewPage';
 import { ConfirmationPage } from './pages/customer/ConfirmationPage';
@@ -35,6 +36,7 @@ export default function App() {
           <Route path="/property" element={<PropertyPage />} />
           <Route path="/liability" element={<LiabilityPage />} />
           <Route path="/challenge" element={<ChallengePage />} />
+          <Route path="/chat" element={<ChatPage />} />
           <Route path="/evidence" element={<EvidencePage />} />
           <Route path="/review" element={<ReviewPage />} />
           <Route path="/confirmation" element={<ConfirmationPage />} />

@@ -227,6 +227,10 @@ export async function askAssistant(caseCtx: CaseContext, question: string, conve
   );
 }
 
+export async function runChatIntake(userMessage: string): Promise<LlmResponse> {
+  return callLlm('chat-intake', userMessage, undefined, { temperature: 0.3, maxTokens: 800, jsonMode: true });
+}
+
 export async function assessDlmImpact(caseCtx: CaseContext): Promise<LlmResponse> {
   return callLlm(
     'dlm-assessment',

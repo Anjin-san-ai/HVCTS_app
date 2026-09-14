@@ -106,6 +106,17 @@ export interface CaseworkerCase {
   aiConfidence: number;
   evidence: EvidenceItem[];
   aiSummary: string;
+  autoTriaged?: boolean;
+  autoTriageReason?: string;
+}
+
+export interface ChatMessage {
+  role: 'assistant' | 'user';
+  text: string;
+  /** Renders an inline upload affordance under this message instead of plain text only. */
+  showUpload?: boolean;
+  /** Renders the citizen's current evidence items as scored cards under this message. */
+  showEvidenceCards?: boolean;
 }
 
 export interface PostcodeResult {

@@ -58,7 +58,10 @@ through the SWA-proxied path, not the App Service hostname directly.
   the API — no CORS, and Static Web Apps' Entra ID sign-in gate covers the
   API too.
 - **Backend**: Azure App Service (Linux, Node 22), running the compiled
-  Express server (`dist-server/index.js`).
+  Express server (`dist-server/index.js`). This includes `/api/ai/chat-intake`,
+  which powers the citizen chatbot view (`/chat`) — it's gated by the same
+  `requireSwaPrincipal` + `rateLimit` + `requireLlm` chain as the other
+  `/api/ai/*` routes, so no separate deployment step is needed for it.
 - **CI/CD**: GitHub Actions, `.github/workflows/azure-deploy.yml`. Push to
   `main` builds, deploys both, and smoke-tests the API. Pull requests get an
   SWA preview environment (frontend only — the API stays pointed at
