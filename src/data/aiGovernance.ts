@@ -139,38 +139,6 @@ export const GOVERNANCE_TABS = [
   'Platform Agents', 'Alerts', 'Trust Radar', 'Human Review',
 ];
 
-// ─── Platform Agents (governance-plane node graph) ────────────────────
-
-export interface PlatformAgentNode {
-  id: string;
-  name: string;
-  evaluations: number;
-  state: 'idle' | 'watch';
-  tag?: string;
-  x: number; // percent, 0-100
-  y: number; // percent, 0-100
-}
-
-export const PLATFORM_AGENT_GRAPH: { nodes: PlatformAgentNode[]; edges: [string, string][] } = {
-  nodes: [
-    { id: 'policy-engine', name: 'Policy Engine', evaluations: 60, state: 'idle', tag: 'PLATFORM', x: 6, y: 50 },
-    { id: 'sentinel', name: 'Sentinel', evaluations: 128, state: 'watch', x: 30, y: 50 },
-    { id: 'policy-reviewer', name: 'Response Policy Reviewer', evaluations: 120, state: 'watch', x: 54, y: 50 },
-    { id: 'mitigation-advisor', name: 'Mitigation Advisor', evaluations: 60, state: 'idle', x: 78, y: 50 },
-    { id: 'conflict-detector', name: 'Conflict Detector', evaluations: 0, state: 'idle', x: 54, y: 10 },
-    { id: 'structuring-detector', name: 'Ownership Structuring Detector', evaluations: 0, state: 'idle', x: 54, y: 90 },
-  ],
-  edges: [
-    ['policy-engine', 'sentinel'],
-    ['sentinel', 'policy-reviewer'],
-    ['policy-reviewer', 'mitigation-advisor'],
-    ['sentinel', 'conflict-detector'],
-    ['sentinel', 'structuring-detector'],
-  ],
-};
-
-export const PLATFORM_AGENT_DESCRIPTION = 'Governance plane — the policy gate, Sentinel & the always-on specialist detectors evaluating every AI operation live. Independent of any single case.';
-
 // ─── Agent Registry ─────────────────────────────────────────────────
 
 export interface AgentRegistryEntry {
@@ -293,6 +261,59 @@ export const AGENT_REGISTRY: AgentRegistryEntry[] = [
     prohibitedActions: ['auto-resolve a case above the confidence/priority thresholds', 'auto-resolve with unverified ownership'],
   },
 ];
+
+// ─── Platform Agents (governance-plane node graph) ────────────────────
+//
+// Derived from AGENT_REGISTRY/AGENT_SCORECARD rather than hand-typed, so
+// this view can never show different agent names than Agent Registry does.
+
+export interface PlatformAgentNode {
+  id: string;
+  name: string;
+  evaluations: number;
+  state: 'idle' | 'watch';
+  tag?: string;
+  x: number; // percent, 0-100
+  y: number; // percent, 0-100
+}
+
+const PLATFORM_GRID_COLS = 3;
+
+function platformLeafPosition(index: number): { x: number; y: number } {
+  const col = index % PLATFORM_GRID_COLS;
+  const row = Math.floor(index / PLATFORM_GRID_COLS);
+  return { x: 40 + col * 28, y: 10 + row * 40 };
+}
+
+const platformOrchestrator = AGENT_REGISTRY.find((a) => a.key === 'case-orchestrator')!;
+const platformLeafAgents = AGENT_REGISTRY.filter((a) => a.key !== 'case-orchestrator');
+
+export const PLATFORM_AGENT_GRAPH: { nodes: PlatformAgentNode[]; edges: [string, string][] } = {
+  nodes: [
+    {
+      id: platformOrchestrator.key,
+      name: platformOrchestrator.name,
+      evaluations: platformOrchestrator.evaluations,
+      state: platformOrchestrator.violations > 0 ? 'watch' : 'idle',
+      tag: 'ORCHESTRATOR',
+      x: 8,
+      y: 50,
+    },
+    ...platformLeafAgents.map((agent, i) => {
+      const scorecard = AGENT_SCORECARD.find((s) => s.key === agent.key);
+      return {
+        id: agent.key,
+        name: agent.name,
+        evaluations: scorecard?.evaluations ?? agent.evaluations,
+        state: (scorecard?.fail ?? 0) > 0 ? 'watch' as const : 'idle' as const,
+        ...platformLeafPosition(i),
+      };
+    }),
+  ],
+  edges: platformLeafAgents.map((agent) => [platformOrchestrator.key, agent.key] as [string, string]),
+};
+
+export const PLATFORM_AGENT_DESCRIPTION = 'Governance plane — the Case Orchestrator and the 9 AI agents it invokes, each evaluated live. Node names match Agent Registry exactly.';
 
 // ─── Human Review ───────────────────────────────────────────────────
 

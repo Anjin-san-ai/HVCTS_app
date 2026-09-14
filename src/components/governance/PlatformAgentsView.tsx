@@ -41,12 +41,12 @@ export function PlatformAgentsView() {
           const displayCount = violationsOnly ? 0 : n.evaluations;
           return (
             <div key={n.id} className="ai-governance__node" style={{ left: `${n.x}%`, top: `${n.y}%` }}>
-              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 8 }}>
-                <span style={{ fontSize: 12, fontWeight: 600 }}>{n.name}</span>
+              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 6 }}>
+                <span style={{ fontSize: 11, fontWeight: 600, lineHeight: 1.2 }}>{n.name}</span>
                 <span className="ai-governance__node-count">{displayCount}</span>
               </div>
-              <div style={{ fontSize: 10, color: '#8a97a6', margin: '4px 0' }}>{displayCount} evaluations</div>
-              <div style={{ display: 'flex', gap: 4 }}>
+              <div style={{ fontSize: 9, color: '#8a97a6', margin: '3px 0' }}>{displayCount} evaluations</div>
+              <div style={{ display: 'flex', gap: 4, flexWrap: 'wrap' }}>
                 <span className={`ai-governance__pill ai-governance__pill--${n.state}`}>{n.state.toUpperCase()}</span>
                 {n.tag && <span className="ai-governance__pill">{n.tag}</span>}
               </div>

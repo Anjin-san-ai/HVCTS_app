@@ -23,6 +23,21 @@ The app has two journeys:
   cases automatically — shown in a separate "Auto-resolved by AI" section,
   reopenable by the caseworker.
 
+  A "CW: AI Governance" button splits the dashboard into two panes: the
+  normal dashboard on the left, and an AI trust/governance prototype view
+  on the right (`src/components/AIGovernancePanel.tsx`,
+  `src/components/governance/`). It's a visual mock, not a live monitoring
+  integration — all figures come from `src/data/aiGovernance.ts`. Five tabs
+  are live: **Cockpit** (composite trust score, RAI pillar scores, agent
+  scorecard), **Platform Agents** (a node graph of the Case Orchestrator and
+  the 9 agents it invokes — the same names as Agent Registry, by
+  construction), **Agent Registry** (a governance card per agent: type,
+  authority, tools, allowed/prohibited actions, trust score), **Human
+  Review** (a mock queue of cases where two agents disagree, paused for a
+  caseworker), and **Eval Trail** (a toggleable list of evaluators grouped
+  by RAI pillar plus HVCTS-specific domain rules). The remaining three tabs
+  (Agents Activity, Alerts, Trust Radar) are unwired placeholders.
+
 This is a **prototype with mock case data** (`src/data/properties.ts`), not
 the production HVCTS system described in the wider design documents (see
 `../solution-architecture.md`, `../technical-design-spec.md`), whose target
@@ -115,10 +130,11 @@ server/            Express API — routes, security middleware, Azure OpenAI cli
 src/
   pages/LoginPage   Static demo sign-in gate (see caveats below)
   pages/customer/   9-step customer journey, plus ChatPage.tsx (conversational alternative)
-  pages/caseworker/ Dashboard (incl. auto-triage section) + case detail
-  components/       ResearchMap (Leaflet), layout (Header/Footer/Nav, view-mode toggle), common, RequireAuth
+  pages/caseworker/ Dashboard (incl. auto-triage section + AI Governance split view) + case detail
+  components/       ResearchMap (Leaflet), layout (Header/Footer/Nav, view-mode toggle), common, RequireAuth,
+                     AIGovernancePanel.tsx + governance/ (Platform Agents, Agent Registry, Human Review, Eval Trail)
   services/         llm.ts (backend AI calls, incl. chat-intake), api.ts + publicData.ts (public UK data), triage.ts (auto-triage rule)
-  data/             Mock property/case data
+  data/             Mock property/case data, aiGovernance.ts (mock AI Governance panel data)
   stores/           Zustand app state (appStore, incl. viewMode) + demo sign-in state (authStore)
 infra/              Bicep IaC + one-time Azure setup script
 .github/workflows/  CI/CD to Azure on push to main
