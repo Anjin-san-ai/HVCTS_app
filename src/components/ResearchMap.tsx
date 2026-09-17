@@ -569,6 +569,9 @@ const styles = {
     borderRadius: '4px',
     border: `1px solid ${GDS.grey}`,
     position: 'relative' as const,
+    // The overlay chrome below is positioned against this box. Without clipping,
+    // a panel taller than the map paints over whatever follows it on the page.
+    overflow: 'hidden' as const,
   }),
   layerPanel: {
     position: 'absolute' as const,
@@ -583,6 +586,8 @@ const styles = {
     fontFamily: '"GDS Transport", Arial, sans-serif',
     boxShadow: '0 2px 8px rgba(0,0,0,0.15)',
     maxWidth: '180px',
+    maxHeight: 'calc(100% - 20px)',
+    overflowY: 'auto' as const,
     backdropFilter: 'blur(8px)',
   },
   layerTitle: {
@@ -623,10 +628,12 @@ const styles = {
     borderBottomLeftRadius: '4px',
     borderBottomRightRadius: '4px',
   },
-  basemapSwitcher: {
+  basemapSwitcher: (hasExpandButton?: boolean) => ({
     position: 'absolute' as const,
     top: '10px',
-    left: '50px',
+    // Clear the ~110px-wide Expand map button when it is rendered, or sit flush
+    // left when it is not.
+    left: hasExpandButton ? '130px' : '10px',
     zIndex: 1000,
     display: 'flex' as const,
     gap: '0px',
@@ -634,7 +641,7 @@ const styles = {
     boxShadow: '0 2px 8px rgba(0,0,0,0.2)',
     borderRadius: '4px',
     overflow: 'hidden' as const,
-  },
+  }),
   basemapBtn: (active: boolean) => ({
     padding: '5px 10px',
     fontSize: '11px',
@@ -696,7 +703,9 @@ const styles = {
     fontFamily: '"GDS Transport", Arial, sans-serif',
     boxShadow: '0 2px 10px rgba(0,0,0,0.18)',
     width: '250px',
-    maxHeight: '380px',
+    // Relative to the map box, not a fixed height: leaves its own 48px top offset
+    // plus clearance for the attribution and building-count badge at the bottom.
+    maxHeight: 'calc(100% - 96px)',
     overflowY: 'auto' as const,
     backdropFilter: 'blur(8px)',
   },
@@ -1267,7 +1276,7 @@ function ResearchMap({
 
         {/* Basemap switcher */}
         {!compact && (
-          <div style={styles.basemapSwitcher}>
+          <div style={styles.basemapSwitcher(Boolean(onExpand))}>
             {(['street', 'satellite', 'hybrid'] as BasemapKey[]).map((key) => (
               <button
                 key={key}
