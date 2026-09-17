@@ -17,6 +17,10 @@ import { PropertyStoryPage } from './pages/customer/PropertyStoryPage';
 import { DashboardPage } from './pages/caseworker/DashboardPage';
 import { CaseDetailPage } from './pages/caseworker/CaseDetailPage';
 import { useAuthStore } from './stores/authStore';
+// Bundled, not loaded from a CDN: a blocked or slow unpkg.com left Leaflet
+// unstyled, which drops position/overflow from its panes and scatters map tiles
+// across the page. Imported before the app's CSS so local rules still win.
+import 'leaflet/dist/leaflet.css';
 import './styles/gds.css';
 import './styles/components.css';
 
