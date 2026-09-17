@@ -1,10 +1,12 @@
 import { useState, useEffect, useCallback, useMemo } from 'react';
 import { useLocation } from 'react-router-dom';
 import { PageLayout } from '../../components/layout';
-import { AiPanel, EvidenceScore, Tag, PropertyMap, formatCurrency, showToast } from '../../components/common';
+import { AiPanel, Tag, PropertyMap, formatCurrency, showToast } from '../../components/common';
 import ResearchMap from '../../components/ResearchMap';
 import { AiAssistant } from '../../components/AiAssistant';
 import { RiskRadar } from '../../components/RiskRadar';
+import { CompanyLookup } from '../../components/CompanyLookup';
+import EvidenceStation from '../../components/caseworker/EvidenceStation';
 import { CASEWORKER_CASES, BAND_THRESHOLDS } from '../../data/properties';
 import { getComparableSales, getNearbyTransactions } from '../../services/api';
 import { fetchCaseBrief, fetchResearch, fetchDecision, fetchDecisionLetter } from '../../services/llm';
@@ -17,6 +19,7 @@ import {
   fetchFloodRisk,
   fetchPlanningData,
   fetchSchoolData,
+  fetchTransportData,
 } from '../../services/publicData';
 import type { CaseBriefData, ResearchData, DecisionData, DecisionLetterData } from '../../services/llm';
 import type {
@@ -27,18 +30,13 @@ import type {
   EpcRecord,
   FloodRiskResult,
   PlanningApplication,
+  TransportStation,
   SchoolResult,
 } from '../../services/publicData';
-import type { CaseworkerCase, LandRegistryTransaction } from '../../types';
-
-type Tab = 'brief' | 'research' | 'evidence' | 'ownership' | 'decision' | 'timeline';
-
-// ─── Human-in-the-Loop (HITL) Types ───
-type GateKey = 'valuation' | 'comparables' | 'ownership' | 'bandAssessment' | 'evidenceReview' | 'finalDecision';
-interface GateState { status: 'pending' | 'approved' | 'overridden' | 'rejected'; aiValue: string; caseworkerValue?: string; reason?: string; timestamp?: string; }
-interface OverrideEntry { gate: string; aiSuggestion: string; caseworkerDecision: string; reason: string; timestamp: string; }
-const GATE_LABELS: Record<GateKey, string> = { valuation: 'Valuation', comparables: 'Comparables', ownership: 'Ownership', bandAssessment: 'Band Assessment', evidenceReview: 'Evidence Review', finalDecision: 'Final Decision' };
-const GATE_ORDER: GateKey[] = ['valuation', 'comparables', 'ownership', 'bandAssessment', 'evidenceReview', 'finalDecision'];
+import type { CaseworkerCase, LandRegistryTransaction, ComparableProperty, CaseworkerTab as Tab, GateKey, GateState } from '../../types';
+import { GDS_COLOURS } from '../../config/gds';
+import { GATE_LABELS, GATE_ORDER } from '../../hooks/useGates';
+import type { OverrideEntry } from '../../hooks/useGates';
 
 const TABS: { id: Tab; label: string; badge?: (c: typeof CASEWORKER_CASES[0]) => string | null }[] = [
   { id: 'brief', label: 'AI Brief' },
@@ -50,7 +48,7 @@ const TABS: { id: Tab; label: string; badge?: (c: typeof CASEWORKER_CASES[0]) =>
 ];
 
 interface DecisionTrailEntry {
-  icon: 'data' | 'ai' | 'comparison' | 'risk' | 'decision';
+  icon: 'data' | 'ai' | 'comparison' | 'risk' | 'decision' | 'robot';
   text: string;
   source: string;
   impact: 'supports' | 'against' | 'neutral';
@@ -95,10 +93,14 @@ export function CaseDetailPage() {
   const [floodData, setFloodData] = useState<FloodRiskResult | null>(null);
   const [planningData, setPlanningData] = useState<PlanningApplication[]>([]);
   const [schoolData, setSchoolData] = useState<SchoolResult[]>([]);
+  const [transportData, setTransportData] = useState<TransportStation[]>([]);
 
   // Interactive research state
   const [selectedComparable, setSelectedComparable] = useState<number | null>(null);
+  const [manualComparables, setManualComparables] = useState<ComparableProperty[]>([]);
   const [decisionTrail, setDecisionTrail] = useState<DecisionTrailEntry[]>([]);
+
+  const allComparables = useMemo(() => [...property.comparables, ...manualComparables], [property.comparables, manualComparables]);
 
   // UX state — accordion sections + map modal + assistant
   const [openSections, setOpenSections] = useState<Set<string>>(new Set(['sales', 'valuation', 'ownership']));
@@ -189,8 +191,8 @@ export function CaseDetailPage() {
     );
     setChangeHistory(chgHist);
 
-    const [aiRes, comps, nearbyTx, propSales, epc, flood, planning, schools] = await Promise.all([
-      fetchResearch(caseData),
+    const [aiRes, comps, nearbyTx, propSales, epc, flood, planning, schools, transport] = await Promise.all([
+      fetchResearch(caseData, allComparables),
       getComparableSales(street || 'CHESHAM PLACE'),
       getNearbyTransactions(property.address.postcode),
       fetchPropertySaleHistory(property.address.line1, property.address.postcode),
@@ -198,6 +200,7 @@ export function CaseDetailPage() {
       coords ? fetchFloodRisk(coords.lat, coords.lng) : Promise.resolve(null),
       fetchPlanningData(property.address.postcode, coords?.lat, coords?.lng),
       coords ? fetchSchoolData(coords.lat, coords.lng) : Promise.resolve([]),
+      coords ? fetchTransportData(coords.lat, coords.lng) : Promise.resolve([]),
     ]);
 
     if (aiRes.success && aiRes.data) {
@@ -219,6 +222,7 @@ export function CaseDetailPage() {
     if (flood) setFloodData(flood);
     setPlanningData(planning);
     setSchoolData(schools);
+    setTransportData(transport);
 
     const valHist = generateValuationHistory(
       property.estimatedValue, property.hvctsBand, property.ctBand,
@@ -239,7 +243,7 @@ export function CaseDetailPage() {
     setResearchRun(true);
 
     buildDecisionTrail(aiRes.data as ResearchData | null, comps, propSales, valHist, chgHist);
-  }, [caseData, property, researchRun]);
+  }, [caseData, property, researchRun, allComparables]);
 
   useEffect(() => { if (activeTab === 'research') loadResearch(); }, [activeTab, loadResearch]);
 
@@ -342,13 +346,13 @@ export function CaseDetailPage() {
   const loadDecision = useCallback(async () => {
     if (decisionData) return;
     setDecisionLoading(true);
-    const res = await fetchDecision(caseData);
+    const res = await fetchDecision(caseData, allComparables);
     if (res.success && res.data) {
       setDecisionData(res.data);
       if (res.tokens) setTokensUsed((t) => t + res.tokens!.total);
     }
     setDecisionLoading(false);
-  }, [caseData, decisionData]);
+  }, [caseData, decisionData, allComparables]);
 
   useEffect(() => { if (activeTab === 'decision') loadDecision(); }, [activeTab, loadDecision]);
 
@@ -357,20 +361,36 @@ export function CaseDetailPage() {
     if (letterData) return;
     setLetterLoading(true);
     const decision = decisionData?.recommendation || 'maintain band';
-    const res = await fetchDecisionLetter(caseData, decision);
+    const res = await fetchDecisionLetter(caseData, decision, allComparables);
     if (res.success && res.data) {
       setLetterData(res.data);
       if (res.tokens) setTokensUsed((t) => t + res.tokens!.total);
     }
     setLetterLoading(false);
-  }, [caseData, decisionData, letterData]);
+  }, [caseData, decisionData, letterData, allComparables]);
 
   useEffect(() => { if (activeTab === 'decision' && decisionData && !letterData) loadLetter(); }, [activeTab, decisionData, letterData, loadLetter]);
+
+  // Re-analyse AI valuation with updated comparables (including manual selections)
+  const reanalyseWithComparables = useCallback(async () => {
+    setResearchLoading(true);
+    const res = await fetchResearch(caseData, allComparables);
+    if (res.success && res.data) {
+      setResearchData(res.data);
+      if (res.model) setLlmModel(res.model);
+      if (res.tokens) setTokensUsed((t) => t + res.tokens!.total);
+    }
+    setResearchLoading(false);
+    setDecisionData(null);
+    setLetterData(null);
+    showToast(`AI re-analysis complete with ${allComparables.length} comparables (${manualComparables.length} manual)`, 'success');
+    setDecisionTrail(prev => [...prev, { icon: 'robot', text: `AI re-analysed valuation with ${manualComparables.length} caseworker-selected comparable${manualComparables.length === 1 ? '' : 's'}`, source: 'AI', impact: 'neutral' }]);
+  }, [caseData, allComparables, manualComparables.length]);
 
   const confidence = briefData?.confidence ?? caseData.aiConfidence;
   const appealRisk = confidence > 70 ? 'low' : confidence > 40 ? 'medium' : 'high';
   const appealRiskPct = confidence > 70 ? 100 - confidence : confidence > 40 ? 60 : 85;
-  const selectedComp = selectedComparable !== null ? property.comparables[selectedComparable] : null;
+  const selectedComp = selectedComparable !== null ? allComparables[selectedComparable] : null;
 
   // ─── Anomaly Detection Engine ───
   const anomalies = useMemo(() => {
@@ -442,12 +462,12 @@ export function CaseDetailPage() {
       (property.comparables.length > 0 ? 15 : 0)
     ));
     return [
-      { label: 'Evidence', score: evidenceScore, color: evidenceScore >= 60 ? '#00703c' : evidenceScore >= 40 ? '#f47738' : '#d4351c' },
-      { label: 'Valuation', score: valuationCertainty, color: valuationCertainty >= 60 ? '#00703c' : valuationCertainty >= 40 ? '#f47738' : '#d4351c' },
-      { label: 'Ownership', score: ownershipClarity, color: ownershipClarity >= 60 ? '#00703c' : ownershipClarity >= 40 ? '#f47738' : '#d4351c' },
-      { label: 'Appeal Safety', score: appealSafety, color: appealSafety >= 60 ? '#00703c' : appealSafety >= 40 ? '#f47738' : '#d4351c' },
-      { label: 'DLM', score: dlmSimplicity, color: dlmSimplicity >= 60 ? '#00703c' : dlmSimplicity >= 40 ? '#f47738' : '#d4351c' },
-      { label: 'Data', score: dataCompleteness, color: dataCompleteness >= 60 ? '#00703c' : dataCompleteness >= 40 ? '#f47738' : '#d4351c' },
+      { label: 'Evidence', score: evidenceScore, color: evidenceScore >= 60 ? GDS_COLOURS.green : evidenceScore >= 40 ? GDS_COLOURS.orange : GDS_COLOURS.red },
+      { label: 'Valuation', score: valuationCertainty, color: valuationCertainty >= 60 ? GDS_COLOURS.green : valuationCertainty >= 40 ? GDS_COLOURS.orange : GDS_COLOURS.red },
+      { label: 'Ownership', score: ownershipClarity, color: ownershipClarity >= 60 ? GDS_COLOURS.green : ownershipClarity >= 40 ? GDS_COLOURS.orange : GDS_COLOURS.red },
+      { label: 'Appeal Safety', score: appealSafety, color: appealSafety >= 60 ? GDS_COLOURS.green : appealSafety >= 40 ? GDS_COLOURS.orange : GDS_COLOURS.red },
+      { label: 'DLM', score: dlmSimplicity, color: dlmSimplicity >= 60 ? GDS_COLOURS.green : dlmSimplicity >= 40 ? GDS_COLOURS.orange : GDS_COLOURS.red },
+      { label: 'Data', score: dataCompleteness, color: dataCompleteness >= 60 ? GDS_COLOURS.green : dataCompleteness >= 40 ? GDS_COLOURS.orange : GDS_COLOURS.red },
     ];
   }, [caseData, property, saleHistory, researchData, confidence, epcData, floodData, planningData, schoolData, ownershipTimeline]);
 
@@ -481,6 +501,17 @@ export function CaseDetailPage() {
     });
   }, [property]);
 
+  const handleAddManualComparable = useCallback((comp: { address: string; salePrice: number; saleDate: string; floorArea?: number; matchStrength: 'strong' | 'moderate' | 'weak'; source: 'manual' }) => {
+    const duplicate = manualComparables.some(c => c.address === comp.address && c.salePrice === comp.salePrice);
+    if (duplicate) {
+      showToast('This comparable has already been added', 'warning');
+      return;
+    }
+    setManualComparables(prev => [...prev, { ...comp, postcode: property.address.postcode }]);
+    showToast(`Manual comparable added: ${comp.address} (${formatCurrency(comp.salePrice)})`, 'success');
+    setDecisionTrail(prev => [...prev, { icon: 'comparison', text: `Caseworker manually added comparable: ${comp.address} at ${formatCurrency(comp.salePrice)}`, source: 'Caseworker', impact: 'supports' }]);
+  }, [manualComparables, property.address.postcode]);
+
   // Research map props (shared between inline and modal)
   const researchMapProps = {
     subjectProperty: {
@@ -490,7 +521,7 @@ export function CaseDetailPage() {
       estimatedValue: property.estimatedValue,
       hvctsBand: property.hvctsBand,
     },
-    comparables: property.comparables.map((c) => ({
+    comparables: allComparables.map((c) => ({
       address: c.address,
       salePrice: c.salePrice,
       saleDate: c.saleDate,
@@ -506,11 +537,13 @@ export function CaseDetailPage() {
       showToast(`Comparable ${idx + 1} ${idx === selectedComparable ? 'deselected' : 'selected'}`, 'info');
     },
     selectedComparable,
+    onAddComparable: handleAddManualComparable,
     dataLayers: {
       epcRatings: epcData.map((e) => ({ address: e.address, currentRating: e.currentRating, currentScore: e.currentScore, floorArea: e.floorArea })),
       floodRisk: floodData ? { riskLevel: floodData.riskLevel, floodAreas: floodData.floodAreas.map((a) => ({ label: a.label, description: a.description })) } : undefined,
       schools: schoolData.map((s) => ({ name: s.name, type: s.type, distance: s.distance, ofstedRating: s.ofstedRating, lat: s.lat, lng: s.lng })),
-      planning: planningData.map((p) => ({ reference: p.reference, description: p.description, status: p.status, dateReceived: p.dateReceived, lat: p.lat, lng: p.lng })),
+      planning: planningData.map((p) => ({ reference: p.reference, description: p.description, status: p.status, dateReceived: p.dateReceived, lat: p.lat, lng: p.lng, type: p.type })),
+      transport: transportData.map((t) => ({ name: t.name, type: t.type, distance: t.distance, lat: t.lat, lng: t.lng, line: t.line })),
     },
   };
 
@@ -730,7 +763,7 @@ export function CaseDetailPage() {
               <div className={`cw-research-status__dot cw-research-status__dot--${researchRun ? 'complete' : 'running'}`} />
               <span>{researchRun ? 'Complete — all sources assembled' : 'Assembling research...'}</span>
               <span style={{ marginLeft: 'auto', opacity: 0.7, fontSize: 11 }}>
-                {saleHistory.length} sales · {epcData.length} EPC · {planningData.length} planning · {schoolData.length} schools
+                {saleHistory.length} sales · {epcData.length} EPC · {planningData.length} heritage · {schoolData.length} schools · {transportData.length} stations
               </span>
             </div>
 
@@ -928,6 +961,16 @@ export function CaseDetailPage() {
                   </Tag>
                 </div>
               </div>
+
+              {/* Companies House lookup */}
+              {(property.ownership.liableType === 'company' || property.ownership.liableType === 'overseas-entity') && (
+                <CompanyLookup
+                  initialQuery={property.ownership.liableEntity !== '(Pending — title register required)' ? property.ownership.liableEntity : ''}
+                />
+              )}
+              {(property.ownership.liableType === 'individual' || property.ownership.liableType === 'trust') && (
+                <CompanyLookup />
+              )}
             </Section>
 
             {/* 4. Property Change / Planning History */}
@@ -984,30 +1027,35 @@ export function CaseDetailPage() {
               )}
             </Section>
 
-            {/* 5. AI Comparables — HITL Gate */}
-            {property.comparables.length > 0 && (
+            {/* 5. Comparables — AI + Manual, HITL Gate */}
+            {allComparables.length > 0 && (
               <Section
                 id="comparables"
-                title="AI-selected comparables"
-                badge={{ text: 'AI', color: 'var(--govuk-dark-blue)' }}
-                count={property.comparables.length}
-                summary={`${property.comparables.filter(c => c.matchStrength === 'strong').length} strong matches`}
+                title="Comparables"
+                badge={{ text: `${property.comparables.length} AI + ${manualComparables.length} Manual`, color: 'var(--govuk-dark-blue)' }}
+                count={allComparables.length}
+                summary={`${allComparables.filter(c => c.matchStrength === 'strong').length} strong matches`}
                 open={openSections.has('comparables')}
                 onToggle={() => toggleSection('comparables')}
               >
                 <div className="hitl-recommendation-card">
                   <div className="hitl-recommendation-card__banner">
-                    <span>AI COMPARABLE SELECTION</span>
-                    <span className="hitl-recommendation-card__model">Caseworker may add/remove comparables</span>
+                    <span>COMPARABLE SELECTION</span>
+                    <span className="hitl-recommendation-card__model">Select buildings on map to add manual comparables</span>
                   </div>
-                {property.comparables.map((c, i) => (
+                {allComparables.map((c, i) => {
+                  const isManual = c.source === 'manual';
+                  return (
                   <div key={i} className={`ai-selection-card${selectedComparable === i ? ' ai-selection-card--selected' : ''}`}
                     onClick={() => setSelectedComparable(selectedComparable === i ? null : i)}
-                    style={{ marginBottom: 6, padding: '8px 12px' }}>
+                    style={{ marginBottom: 6, padding: '8px 12px', borderLeft: isManual ? `3px solid var(--govuk-turquoise)` : undefined }}>
                     <div className="ai-selection-card__header" style={{ marginBottom: 4 }}>
                       <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-                        <div className="ai-selection-card__num" style={{ width: 20, height: 20, fontSize: 11 }}>{i + 1}</div>
+                        <div className="ai-selection-card__num" style={{ width: 20, height: 20, fontSize: 11, background: isManual ? 'var(--govuk-turquoise)' : undefined }}>{i + 1}</div>
                         <div className="ai-selection-card__address" style={{ fontSize: 13 }}>{c.address}</div>
+                        <span className={`govuk-tag govuk-tag--${isManual ? 'turquoise' : 'purple'}`} style={{ fontSize: 8, padding: '0 4px', lineHeight: '14px' }}>
+                          {isManual ? 'MANUAL' : 'AI'}
+                        </span>
                       </div>
                       {c.matchStrength && (
                         <div className={`ai-selection-card__match ai-selection-card__match--${c.matchStrength}`} style={{ fontSize: 11 }}>
@@ -1019,8 +1067,17 @@ export function CaseDetailPage() {
                       {formatCurrency(c.salePrice)} · {c.saleDate} · {c.floorArea ? `${c.floorArea}sqm` : '—'}
                       {c.bedrooms ? ` · ${c.bedrooms}bed` : ''}
                     </div>
+                    {isManual && (
+                      <button
+                        onClick={(e) => { e.stopPropagation(); setManualComparables(prev => prev.filter((_, mi) => mi !== i - property.comparables.length)); }}
+                        style={{ background: 'none', border: 'none', fontSize: 10, color: 'var(--govuk-red)', cursor: 'pointer', padding: '2px 0', fontFamily: 'var(--govuk-font)', textDecoration: 'underline' }}
+                      >
+                        Remove manual comparable
+                      </button>
+                    )}
                   </div>
-                ))}
+                  );
+                })}
 
                 {/* Side-by-side comparison */}
                 {selectedComp && (
@@ -1076,9 +1133,16 @@ export function CaseDetailPage() {
                     </div>
                   </div>
                 )}
-                  <HitlActions gate="comparables" gateState={gateStates.comparables}
-                    aiValue={`${property.comparables.length} comparables selected (${property.comparables.filter(c => c.matchStrength === 'strong').length} strong matches)`}
-                    onApprove={approveGate} onOverride={(g, v) => setOverrideModal({ gate: g, aiValue: v })} onReset={resetGate} />
+                  <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '10px 14px', background: 'var(--govuk-light-grey)', borderTop: '1px solid var(--govuk-mid-grey)', marginTop: 10 }}>
+                    <span style={{ fontSize: 13, color: 'var(--govuk-dark-grey)', fontWeight: 600 }}>
+                      {property.comparables.length} comparables selected ({property.comparables.filter(c => c.matchStrength === 'strong').length} strong matches)
+                    </span>
+                    <button className="govuk-button govuk-button--secondary" style={{ margin: 0, fontSize: 13, padding: '6px 14px', display: 'flex', alignItems: 'center', gap: 6 }}
+                      onClick={() => { setActiveTab('evidence'); showToast('Comparable findings forwarded to Evidence review', 'info'); }}>
+                      <svg width="14" height="14" viewBox="0 0 14 14" fill="none"><path d="M1 7h10M8 4l3 3-3 3" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round"/></svg>
+                      Forward to Evidence
+                    </button>
+                  </div>
                 </div>
               </Section>
             )}
@@ -1164,16 +1228,39 @@ export function CaseDetailPage() {
                         <ul style={{ marginLeft: 16, marginTop: 4, marginBottom: 0 }}>{(researchData.dataGaps || []).map((g, i) => <li key={i}>{g}</li>)}</ul>
                       </div>
                     )}
+                    {manualComparables.length > 0 && (
+                      <div style={{ padding: 10, borderLeft: '3px solid var(--govuk-blue)', background: '#f0f4f8', fontSize: 13, marginTop: 10, display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 12 }}>
+                        <div>
+                          <strong>{manualComparables.length} caseworker-selected comparable{manualComparables.length === 1 ? '' : 's'}</strong> added from map.
+                          {' '}Re-analyse to include in AI valuation.
+                        </div>
+                        <button
+                          onClick={reanalyseWithComparables}
+                          disabled={researchLoading}
+                          className="govuk-button govuk-button--secondary"
+                          style={{ margin: 0, whiteSpace: 'nowrap', fontSize: 13, padding: '6px 14px' }}
+                        >
+                          {researchLoading ? 'Analysing...' : `Re-analyse (${allComparables.length} comps)`}
+                        </button>
+                      </div>
+                    )}
                   </div>
-                  <HitlActions gate="valuation" gateState={gateStates.valuation}
-                    aiValue={`Desktop estimate: ${formatCurrency(researchData.valuationEstimate || property.estimatedValue)}`}
-                    onApprove={approveGate} onOverride={(g, v) => setOverrideModal({ gate: g, aiValue: v })} onReset={resetGate} />
+                  <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '10px 14px', background: 'var(--govuk-light-grey)', borderTop: '1px solid var(--govuk-mid-grey)', marginTop: 10 }}>
+                    <span style={{ fontSize: 13, color: 'var(--govuk-dark-grey)', fontWeight: 600 }}>
+                      Desktop estimate: {formatCurrency(researchData.valuationEstimate || property.estimatedValue)}
+                    </span>
+                    <button className="govuk-button govuk-button--secondary" style={{ margin: 0, fontSize: 13, padding: '6px 14px', display: 'flex', alignItems: 'center', gap: 6 }}
+                      onClick={() => { setActiveTab('evidence'); showToast('Valuation analysis forwarded to Evidence review', 'info'); }}>
+                      <svg width="14" height="14" viewBox="0 0 14 14" fill="none"><path d="M1 7h10M8 4l3 3-3 3" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round"/></svg>
+                      Forward to Evidence
+                    </button>
+                  </div>
                 </div>
               </Section>
             )}
 
             {/* 7. Desktop Valuation — HITL Gate */}
-            {caseData.challengeType === 'Band dispute' && property.comparables.length > 0 && (
+            {property.comparables.length > 0 && (
               <Section
                 id="desktopVal"
                 title="Desktop valuation"
@@ -1216,9 +1303,16 @@ export function CaseDetailPage() {
                       </div>
                     </div>
                   </div>
-                  <HitlActions gate="bandAssessment" gateState={gateStates.bandAssessment}
-                    aiValue={`${property.estimatedValue >= threshold.min ? 'Supports' : 'Below'} ${property.hvctsBand} — ${formatCurrency(researchData?.valuationEstimate || property.estimatedValue)}`}
-                    onApprove={approveGate} onOverride={(g, v) => setOverrideModal({ gate: g, aiValue: v })} onReset={resetGate} />
+                  <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '10px 14px', background: 'var(--govuk-light-grey)', borderTop: '1px solid var(--govuk-mid-grey)', marginTop: 10 }}>
+                    <span style={{ fontSize: 13, color: 'var(--govuk-dark-grey)', fontWeight: 600 }}>
+                      {property.estimatedValue >= threshold.min ? 'Supports' : 'Below'} {property.hvctsBand} — {formatCurrency(researchData?.valuationEstimate || property.estimatedValue)}
+                    </span>
+                    <button className="govuk-button govuk-button--secondary" style={{ margin: 0, fontSize: 13, padding: '6px 14px', display: 'flex', alignItems: 'center', gap: 6 }}
+                      onClick={() => { setActiveTab('evidence'); showToast('Band assessment forwarded to Evidence review', 'info'); }}>
+                      <svg width="14" height="14" viewBox="0 0 14 14" fill="none"><path d="M1 7h10M8 4l3 3-3 3" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round"/></svg>
+                      Forward to Evidence
+                    </button>
+                  </div>
                 </div>
               </Section>
             )}
@@ -1287,8 +1381,36 @@ export function CaseDetailPage() {
         </div>
       )}
 
+      {/* =================== EVIDENCE TAB — Full-width viewport-fitting =================== */}
+      {activeTab === 'evidence' && (
+        <div style={{ marginTop: 0 }}>
+          <EvidenceStation
+            caseData={{
+              evidence: caseData.evidence,
+              reference: caseData.reference,
+              challengeType: caseData.challengeType,
+              property: {
+                address: property.address,
+                estimatedValue: property.estimatedValue,
+                hvctsBand: property.hvctsBand,
+                coordinates: property.coordinates,
+              },
+            }}
+            gateState={gateStates.evidenceReview}
+            researchGates={{
+              comparables: gateStates.comparables,
+              valuation: gateStates.valuation,
+              bandAssessment: gateStates.bandAssessment,
+            }}
+            onApproveGate={approveGate}
+            onOverrideGate={(g, v) => setOverrideModal({ gate: g, aiValue: v })}
+            onResetGate={resetGate}
+          />
+        </div>
+      )}
+
       {/* =================== OTHER TABS — Standard 2/3 + Sidebar Layout =================== */}
-      {activeTab !== 'research' && (
+      {activeTab !== 'research' && activeTab !== 'evidence' && (
         <div className="govuk-grid-row" style={{ marginTop: 20 }}>
           <div className="govuk-grid-column-two-thirds">
 
@@ -1371,43 +1493,6 @@ export function CaseDetailPage() {
                     </ul>
                   </>
                 )}
-              </>
-            )}
-
-            {/* =================== EVIDENCE TAB =================== */}
-            {activeTab === 'evidence' && (
-              <>
-                <h2 className="govuk-heading-m">Submitted evidence</h2>
-                {caseData.evidence.length === 0 ? (
-                  <p className="govuk-body">No evidence submitted by customer.</p>
-                ) : (
-                  <div className="hitl-recommendation-card">
-                    <div className="hitl-recommendation-card__banner">
-                      <span>AI EVIDENCE ASSESSMENT</span>
-                      <span className="hitl-recommendation-card__model">Evidence Analyst</span>
-                    </div>
-                    <AiPanel icon="E" label="Evidence Analyst" title={`${caseData.evidence.length} item(s) assessed`}>
-                      {caseData.evidence.map((e) => (
-                        <EvidenceScore key={e.id} score={e.score} strength={e.strength} title={`${e.fileName} — ${e.description}`} assessment={e.aiAssessment} />
-                      ))}
-                      <div style={{ marginTop: 15, padding: '10px 12px', background: 'var(--govuk-light-grey)', fontSize: 14 }}>
-                        <strong>Evidence package strength:</strong>{' '}
-                        {(() => {
-                          const avg = caseData.evidence.reduce((a, e) => a + e.score, 0) / caseData.evidence.length;
-                          return avg > 80 ? 'Strong — sufficient for decision' : avg > 50 ? 'Moderate — consider requesting additional evidence' : 'Weak — insufficient for band change';
-                        })()}
-                      </div>
-                    </AiPanel>
-                    <HitlActions gate="evidenceReview" gateState={gateStates.evidenceReview}
-                      aiValue={`${caseData.evidence.length} evidence items assessed — ${(() => { const avg = caseData.evidence.reduce((a, e) => a + e.score, 0) / caseData.evidence.length; return avg > 80 ? 'Strong' : avg > 50 ? 'Moderate' : 'Weak'; })()}`}
-                      onApprove={approveGate} onOverride={(g, v) => setOverrideModal({ gate: g, aiValue: v })} onReset={resetGate} />
-                  </div>
-                )}
-                <h2 className="govuk-heading-m" style={{ marginTop: 25 }}>Caseworker actions</h2>
-                <div className="action-bar">
-                  <button className="govuk-button govuk-button--secondary" onClick={() => showToast('Evidence request sent to customer', 'info')}>Request more evidence</button>
-                  <button className="govuk-button govuk-button--secondary" onClick={() => showToast('Evidence forwarded to specialist valuer', 'info')}>Forward to specialist</button>
-                </div>
               </>
             )}
 
@@ -1751,7 +1836,23 @@ export function CaseDetailPage() {
         </div>
       )}
       {/* AI Assistant — available on all tabs */}
-      <AiAssistant caseData={caseData} isOpen={assistantOpen} onToggle={() => setAssistantOpen(!assistantOpen)} />
+      <AiAssistant
+        caseData={caseData}
+        allComparables={allComparables}
+        isOpen={assistantOpen}
+        onToggle={() => setAssistantOpen(!assistantOpen)}
+        onApproveGate={approveGate}
+        onOverrideGate={(gate, aiValue) => setOverrideModal({ gate, aiValue })}
+        onNavigateTab={(tab) => setActiveTab(tab as Tab)}
+        onRunResearch={() => { setActiveTab('research'); loadResearch(); }}
+        onSelectComparable={(idx) => setSelectedComparable(idx === selectedComparable ? null : idx)}
+        onExpandMap={() => setMapModalOpen(true)}
+        activeTab={activeTab}
+        gateStates={gateStates}
+        confirmedGates={confirmedGates}
+        totalGates={GATE_ORDER.length}
+        researchRun={researchRun}
+      />
     </PageLayout>
   );
 }

@@ -1,0 +1,122 @@
+# GOV.UK Service Directory for HVCTS Signposting
+# ─────────────────────────────────────────────────
+# When a citizen's message matches keywords, the relevant GOV.UK service
+# card is shown alongside the AI response. This ensures citizens are
+# connected to the right government service even when HVCTS cannot help.
+#
+# hvctsAngle: explains how this service relates to HVCTS specifically.
+
+version: "1.0"
+lastUpdated: "2028-04-01"
+
+services:
+  - name: "Council Tax: appeals and reductions"
+    org: "Valuation Office Agency"
+    url: "https://www.gov.uk/council-tax-appeals"
+    description: "Challenge your Council Tax band, apply for reductions, or report changes to your property."
+    phone: "03000 501 501"
+    keywords: "council\\s*tax|ct\\s*band|domestic\\s*rate"
+    hvctsAngle: "HVCTS is separate from Council Tax — your Council Tax band and HVCTS band are assessed independently. You may need to challenge both separately."
+
+  - name: "Universal Credit"
+    org: "Department for Work and Pensions"
+    url: "https://www.gov.uk/universal-credit"
+    description: "Apply for Universal Credit if you are on a low income or out of work. May affect eligibility for HVCTS hardship relief."
+    phone: "0800 328 5644"
+    keywords: "universal\\s*credit|uc\\s*claim|benefit|job\\s*seek|out\\s*of\\s*work|unemploy|income\\s*support|welfare"
+    hvctsAngle: "If you receive Universal Credit or other means-tested benefits, you may qualify for HVCTS hardship relief or a payment plan."
+
+  - name: "Insolvency and bankruptcy"
+    org: "Insolvency Service"
+    url: "https://www.gov.uk/government/organisations/insolvency-service"
+    description: "Get help with bankruptcy, debt relief orders, and individual voluntary arrangements."
+    phone: "0300 678 0015"
+    keywords: "bankrupt|insolven|iva|debt\\s*relief|sequestrat|winding\\s*up|liquidat"
+    hvctsAngle: "If you are bankrupt or in an IVA, the HVCTS surcharge may be treated as a provable debt. Contact the VOA hardship team to discuss your situation."
+
+  - name: "StepChange debt advice"
+    org: "StepChange (charity)"
+    url: "https://www.stepchange.org"
+    description: "Free, confidential debt advice. Can help negotiate with creditors including government agencies."
+    phone: "0800 138 1111"
+    keywords: "debt|can.?t\\s*(afford|pay)|no\\s*money|don.?t\\s*have\\s*money|owe|arrears|bailiff|enforcement"
+    hvctsAngle: "StepChange can advise on your overall debt situation and may be able to negotiate HVCTS payment terms on your behalf."
+
+  - name: "Citizens Advice"
+    org: "Citizens Advice Bureau"
+    url: "https://www.citizensadvice.org.uk"
+    description: "Free advice on housing, debt, benefits, employment, and consumer rights."
+    phone: "0800 144 8848"
+    keywords: "citizen.?s?\\s*advice|cab|free\\s*advice|don.?t\\s*know\\s*what|where\\s*do\\s*i|need\\s*help|confused|lost"
+    hvctsAngle: "Citizens Advice can help you understand your HVCTS obligations and connect you with local support."
+
+  - name: "Valuation Tribunal"
+    org: "Valuation Tribunal Service"
+    url: "https://www.valuationtribunal.gov.uk"
+    description: "Appeal a VOA decision on Council Tax, business rates, or HVCTS to an independent tribunal."
+    keywords: "tribunal|appeal|independent\\s*review|second\\s*opinion|escalat|not\\s*happy\\s*with\\s*decision|rejected"
+    hvctsAngle: "If your HVCTS challenge is rejected by the VOA, you can appeal to the Valuation Tribunal within 28 days of the decision."
+
+  - name: "HM Land Registry"
+    org: "HM Land Registry"
+    url: "https://www.gov.uk/government/organisations/land-registry"
+    description: "Search the register, update ownership records, or get copies of title deeds."
+    phone: "0300 006 0411"
+    keywords: "land\\s*registry|title\\s*deed|register|ownership\\s*record|transfer\\s*title"
+    hvctsAngle: "Land Registry records are used to determine HVCTS liability. If ownership records are incorrect, updating them may affect your assessment."
+
+  - name: "Planning permission"
+    org: "Local planning authority"
+    url: "https://www.gov.uk/planning-permission-england-wales"
+    description: "Check if you need planning permission, find your local planning authority, or search planning applications."
+    keywords: "planning\\s*permission|planning\\s*application|build|extension|conversion|change\\s*of\\s*use|permitted\\s*development"
+    hvctsAngle: "Changes to your property through planning permission (extensions, subdivisions) may affect your HVCTS band on revaluation."
+
+  - name: "Stamp Duty Land Tax"
+    org: "HMRC"
+    url: "https://www.gov.uk/stamp-duty-land-tax"
+    description: "Calculate and pay SDLT when you buy property over a certain price in England and Northern Ireland."
+    keywords: "stamp\\s*duty|sdlt|purchase\\s*tax|buying|bought|convey"
+    hvctsAngle: "SDLT and HVCTS are separate charges. SDLT is a one-off purchase tax; HVCTS is an annual surcharge on high-value properties."
+
+  - name: "Inheritance Tax"
+    org: "HMRC"
+    url: "https://www.gov.uk/inheritance-tax"
+    description: "Check if Inheritance Tax applies, report the value of an estate, and pay any tax owed."
+    keywords: "inherit|estate|death|died|bereav|probate|will|deceased|pass\\s*away"
+    hvctsAngle: "If the liable person has died, the estate may be responsible for HVCTS up to the date of death. The new owner becomes liable from the date of transfer."
+
+  - name: "Capital Gains Tax on property"
+    org: "HMRC"
+    url: "https://www.gov.uk/tax-sell-property"
+    description: "Report and pay Capital Gains Tax when you sell or dispose of property."
+    keywords: "capital\\s*gain|cgt|sell\\s*(my|the|a)?\\s*property|disposal|profit\\s*on\\s*sale"
+    hvctsAngle: "Selling the property ends your HVCTS liability from the date of disposal. You may also need to report Capital Gains Tax."
+
+  - name: "GOV.UK One Login"
+    org: "Government Digital Service"
+    url: "https://www.sign-in.service.gov.uk"
+    description: "Create or manage your GOV.UK One Login to access government services securely."
+    keywords: "one\\s*login|sign\\s*in|log\\s*in|account|password|identity|verify|can.?t\\s*sign|access\\s*account"
+
+  - name: "Shelter housing advice"
+    org: "Shelter (charity)"
+    url: "https://www.shelter.org.uk"
+    description: "Free housing advice for people facing homelessness, eviction, or housing problems."
+    phone: "0808 800 4444"
+    keywords: "homeless|evict|housing|tenant|landlord|rent|repossess|mortgage\\s*arrears|lose\\s*my\\s*home|kicked\\s*out"
+    hvctsAngle: "If you are at risk of losing your home, Shelter can provide immediate advice. HVCTS hardship relief may also be available."
+
+  - name: "Divorce and separation: property"
+    org: "HM Courts & Tribunals Service"
+    url: "https://www.gov.uk/money-property-when-relationship-ends"
+    description: "Understand how property is divided during divorce or separation, including financial orders."
+    keywords: "divorc|separat|ex[\\s-]?(wife|husband|partner|spouse)|matrimon|family\\s*court|financial\\s*order|consent\\s*order"
+    hvctsAngle: "During divorce proceedings, HVCTS liability remains with the registered owner until ownership is formally transferred by court order or Land Registry update."
+
+  - name: "Energy Performance Certificates"
+    org: "Ministry of Housing"
+    url: "https://www.gov.uk/find-energy-certificate"
+    description: "Find or commission an Energy Performance Certificate for your property."
+    keywords: "epc|energy\\s*performance|energy\\s*rating|insulation|efficiency|carbon|green\\s*deal"
+    hvctsAngle: "EPC ratings do not directly affect your HVCTS band, which is based on market value rather than energy efficiency."

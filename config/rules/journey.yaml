@@ -1,0 +1,24 @@
+# Journey Phase Configuration
+# ────────────────────────────
+# Defines the citizen challenge journey phases and visual settings.
+
+version: "1.0"
+
+phases:
+  - key: listen
+    label: Describe
+  - key: analyse
+    label: Analyse
+  - key: evidence
+    label: Evidence
+  - key: review
+    label: Review
+  - key: submitted
+    label: Submitted
+
+bandColours:
+  H1: default
+  H2: turquoise
+  H3: purple
+  H4: orange
+  H5: red

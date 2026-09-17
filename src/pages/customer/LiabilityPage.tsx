@@ -2,6 +2,7 @@ import { useNavigate } from 'react-router-dom';
 import { PageLayout } from '../../components/layout';
 import { AiPanel, Tag } from '../../components/common';
 import { useAppStore } from '../../stores/appStore';
+import { GDS_COLOURS } from '../../config/gds';
 
 export function LiabilityPage() {
   const navigate = useNavigate();
@@ -31,14 +32,14 @@ export function LiabilityPage() {
             {ownership.nodes.map((node, i) => (
               <div key={i} className="ownership-node">
                 <div className="ownership-node__connector">
-                  <div className="ownership-node__dot" style={node.status === 'gap-identified' ? { background: '#f47738' } : node.status === 'needs-review' ? { background: '#f47738' } : undefined} />
+                  <div className="ownership-node__dot" style={node.status === 'gap-identified' ? { background: GDS_COLOURS.orange } : node.status === 'needs-review' ? { background: GDS_COLOURS.orange } : undefined} />
                   <div className="ownership-node__line" />
                 </div>
                 <div className={`ownership-node__content${node.status === 'gap-identified' || node.status === 'needs-review' ? ' ownership-node__content--warning' : ''}`}>
                   <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
                     <div>
                       <div className="ownership-node__source">{node.source}</div>
-                      <div className="ownership-node__entity" style={node.status === 'gap-identified' ? { color: '#f47738' } : undefined}>
+                      <div className="ownership-node__entity" style={node.status === 'gap-identified' ? { color: GDS_COLOURS.orange } : undefined}>
                         {node.entity}
                       </div>
                     </div>

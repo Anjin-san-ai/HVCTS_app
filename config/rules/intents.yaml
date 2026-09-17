@@ -1,0 +1,205 @@
+# HVCTS Intent Classification Rules
+# ──────────────────────────────────
+# Defines the intent taxonomy for citizen message classification.
+# Each intent has a category, description, and keyword signals.
+#
+# Categories:
+#   challenge     → routes citizen to formal challenge flow
+#   advisory      → provides contextual guidance, stays in current phase
+#   informational → answers question, no state change
+#
+# In production, keyword matching is augmented by LLM embedding similarity.
+
+version: "1.0"
+lastUpdated: "2028-04-01"
+
+intents:
+  # ─── Challenge intents ───
+  - intent: pad-wrong
+    category: challenge
+    description: "Property details are incorrect (floor area, rooms, features, measurements)"
+    keywords:
+      - floor area
+      - sqm
+      - size
+      - smaller
+      - bigger
+      - measurement
+      - bedroom
+      - bathroom
+      - room
+      - garage
+      - garden
+      - feature
+      - extension
+      - conservatory
+
+  - intent: band-wrong
+    category: challenge
+    description: "The valuation or band is too high, or the property is worth less than assessed"
+    keywords:
+      - band
+      - value
+      - worth
+      - overvalued
+      - too high
+      - too much
+      - price
+      - comparable
+      - neighbour
+
+  - intent: liability-wrong
+    category: challenge
+    description: "Wrong person or entity is being held liable for the surcharge"
+    keywords:
+      - not the owner
+      - liability
+      - liable
+      - company
+      - trust
+      - wrong person
+
+  - intent: split-merge
+    category: challenge
+    description: "Property has been split, merged, demolished, or structurally changed"
+    keywords:
+      - split
+      - merge
+      - demolish
+      - divide
+      - annex
+      - separate
+      - converted
+
+  # ─── Advisory intents ───
+  - intent: financial-hardship
+    category: advisory
+    description: "Cannot afford to pay, financial difficulty, debt, bankruptcy"
+    keywords:
+      - afford
+      - pay
+      - money
+      - bankrupt
+      - debt
+      - hardship
+      - financial
+      - struggle
+      - poverty
+      - unemployed
+      - benefit
+      - pension
+      - income
+
+  - intent: payment-plan
+    category: advisory
+    description: "Wants a payment plan, instalments, or deferred payment"
+    keywords:
+      - payment plan
+      - instalment
+      - spread
+      - monthly
+      - defer
+      - payment option
+
+  - intent: exemption
+    category: advisory
+    description: "Believes they may be exempt (charity, diplomatic, crown, demolished, below threshold)"
+    keywords:
+      - exempt
+      - exception
+      - not applicable
+      - excluded
+      - charity
+      - diplomatic
+      - embassy
+      - crown property
+      - demolished
+      - derelict
+
+  - intent: deadline
+    category: advisory
+    description: "Concerned about deadlines, time limits, or missed windows"
+    keywords:
+      - deadline
+      - time limit
+      - how long
+      - late
+      - missed
+      - expired
+      - 28 days
+      - appeal window
+
+  - intent: complaint
+    category: advisory
+    description: "Expressing dissatisfaction, complaint, or sense of unfairness"
+    keywords:
+      - complaint
+      - unfair
+      - outrageous
+      - wrong
+      - unjust
+      - ridiculous
+      - angry
+      - frustrated
+
+  - intent: disposal
+    category: advisory
+    description: "Property has been sold, transferred, or no longer owned"
+    keywords:
+      - sold
+      - selling
+      - moving
+      - no longer own
+      - disposed
+      - transferred
+      - new owner
+
+  - intent: vulnerability
+    category: advisory
+    description: "Disability, illness, mental health, caring responsibilities, or special circumstances"
+    keywords:
+      - disabled
+      - disability
+      - ill
+      - illness
+      - mental health
+      - carer
+      - vulnerable
+      - special circumstances
+
+  # ─── Informational intents ───
+  - intent: comprehension
+    category: informational
+    description: "Wants to understand something about their assessment or the process"
+    keywords:
+      - why
+      - explain
+      - understand
+      - what is
+      - tell me about
+      - how does
+
+  - intent: contact
+    category: informational
+    description: "Wants to speak to a person, get contact details, or reach out"
+    keywords:
+      - contact
+      - phone
+      - email
+      - speak
+      - talk
+      - human
+      - person
+      - officer
+      - call
+
+  - intent: help
+    category: informational
+    description: "Seeking general guidance, options, or next steps"
+    keywords:
+      - help
+      - options
+      - advice
+      - guide
+      - next step
+      - what should I do

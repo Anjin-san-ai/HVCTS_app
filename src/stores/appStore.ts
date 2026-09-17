@@ -1,6 +1,9 @@
 import { create } from 'zustand';
 import type { Property, ChallengeState, ChallengeReason, EvidenceItem } from '../types';
 
+/** Prototype personas, in the order they appear in the top navigation. */
+export type Persona = 'raio' | 'citizen' | 'story' | 'cw';
+
 interface AppState {
   searchPostcode: string;
   searchResults: Property[];
@@ -9,8 +12,13 @@ interface AppState {
   selectedProperty: Property | null;
   challenge: ChallengeState;
   viewMode: 'form' | 'chat';
+  /**
+   * Which persona the prototype is being demonstrated as. Route-independent on
+   * purpose: the RAIO-only AI Governance entry point has to react to the
+   * persona being *selected*, not to the caseworker route being open.
+   */
+  persona: Persona;
 
-  setViewMode: (mode: 'form' | 'chat') => void;
   setSearchPostcode: (postcode: string) => void;
   setSearchResults: (results: Property[]) => void;
   setIsSearching: (loading: boolean) => void;
@@ -20,6 +28,8 @@ interface AppState {
   addEvidence: (evidence: EvidenceItem) => void;
   removeEvidence: (id: string) => void;
   setChallengeNotes: (notes: string) => void;
+  setViewMode: (mode: 'form' | 'chat') => void;
+  setPersona: (persona: Persona) => void;
   toggleComparable: (address: string) => void;
   submitChallenge: () => string;
   resetChallenge: () => void;
@@ -42,8 +52,8 @@ export const useAppStore = create<AppState>((set, get) => ({
   selectedProperty: null,
   challenge: { ...INITIAL_CHALLENGE },
   viewMode: 'form',
+  persona: 'citizen',
 
-  setViewMode: (mode) => set({ viewMode: mode }),
   setSearchPostcode: (postcode) => set({ searchPostcode: postcode }),
   setSearchResults: (results) => set({ searchResults: results }),
   setIsSearching: (loading) => set({ isSearching: loading }),
@@ -66,6 +76,10 @@ export const useAppStore = create<AppState>((set, get) => ({
 
   setChallengeNotes: (notes) =>
     set((s) => ({ challenge: { ...s.challenge, notes } })),
+
+  setViewMode: (mode) => set({ viewMode: mode }),
+
+  setPersona: (persona) => set({ persona }),
 
   toggleComparable: (address) =>
     set((s) => {

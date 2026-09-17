@@ -1,0 +1,207 @@
+# HVCTS Challenge Types Configuration
+# ─────────────────────────────────────
+# Each challenge type defines the evidence the citizen must provide,
+# acceptance criteria, and simulated evaluation outcomes (prototype).
+#
+# To add a new challenge type: append a new entry with a unique key.
+# To modify evidence requirements: update the evidenceTypes array.
+# In production, this file is replaced by a database-backed rule store.
+
+version: "1.0"
+lastUpdated: "2028-04-01"
+owner: "VOA Policy Team"
+
+challengeTypes:
+  pad-wrong:
+    label: "Property details incorrect"
+    colour: blue
+    summaryTemplate: "Recorded: {floorArea} {floorAreaUnit}, {bedrooms} bed, {bathrooms} bath"
+    evidenceTypes:
+      - key: floor-plan
+        label: "Measured floor plan"
+        icon: "M6 2h12v4h4v16H2V2h4zm2 6v2h8V8H8zm0 4v2h6v-2H8z"
+        description: "RICS-accredited measured floor plan showing GIA"
+        acceptedFormats: [PDF, DWG]
+        requirements:
+          - "RICS surveyor credentials"
+          - "Within 12 months"
+          - "GIA calculation"
+        impact: primary
+        sim:
+          strength: 35
+          verdict: accepted
+          checks:
+            - "File type: PDF — approved"
+            - "Surveyor: RICS-accredited — verified"
+            - "GIA: 282 sqm (PAD: {floorArea} sqm) — discrepancy confirmed"
+            - "Date: within 12 months — valid"
+            - "Address: matches record — confirmed"
+          assessmentTemplate: "RICS floor plan shows 282 sqm GIA — {floorAreaDiff} sqm less than PAD. Strong primary evidence."
+
+      - key: structural-survey
+        label: "Structural survey"
+        icon: "M3 21h18M9 8h1M9 12h1M9 16h1M14 8h1M14 12h1M5 21V5a2 2 0 012-2h10a2 2 0 012 2v16"
+        description: "Condition report identifying defects affecting attributes"
+        acceptedFormats: [PDF]
+        requirements:
+          - "Chartered engineer"
+          - "Within 24 months"
+        impact: supporting
+        sim:
+          strength: 20
+          verdict: conditional
+          checks:
+            - "File type: PDF — approved"
+            - "Engineer: chartered — verified"
+            - "Defect: subsidence east elevation — Category 2"
+            - "Quantified impact on value: not included"
+          assessmentTemplate: "Subsidence confirmed but impact on value not quantified. Conditionally accepted — pair with a valuation report for full strength."
+
+    rejectedExample:
+      key: estate-agent-floorplan
+      label: "Estate agent floor plan"
+      reason: "Non-RICS floor plans lack the measurement standards required by VOA. Obtain a RICS-accredited measured survey."
+
+  band-wrong:
+    label: "Valuation too high"
+    colour: orange
+    summaryTemplate: "Assessed: {estimatedValue} (Band {hvctsBand})"
+    evidenceTypes:
+      - key: valuation-report
+        label: "RICS Red Book valuation"
+        icon: "M4 4h16v16H4zM8 8h3v3H8zM13 8h3M13 11h3M8 14h8"
+        description: "Formal independent valuation by a Registered Valuer"
+        acceptedFormats: [PDF]
+        requirements:
+          - "RICS Registered Valuer"
+          - "Red Book compliant"
+          - "Within 6 months"
+        impact: primary
+        sim:
+          strength: 30
+          verdict: accepted
+          checks:
+            - "File type: PDF — approved"
+            - "Valuer: RICS Registered — confirmed"
+            - "Red Book compliant: yes"
+            - "Valued at: {reducedValue} — below band threshold"
+            - "Date: within 6 months — valid"
+          assessmentTemplate: "RICS valuation at {reducedValue} — {valueDiff} below your assessment. Strong primary evidence."
+
+      - key: comparable-sales
+        label: "Comparable sales evidence"
+        icon: "M3 12l2-2m0 0l7-7 7 7M5 10v10a1 1 0 001 1h3m10-11l2 2m-2-2v10a1 1 0 01-1 1h-3"
+        description: "Recent sales of similar properties below your band threshold"
+        acceptedFormats: ["Select from list"]
+        requirements:
+          - "Same postcode area"
+          - "Similar property type"
+          - "Within 2 years"
+        impact: supporting
+        sim:
+          strength: 15
+          verdict: accepted
+          checks:
+            - "Source: HM Land Registry — verified"
+            - "Location: same postcode area"
+            - "Property type: comparable"
+          assessmentTemplate: "Comparable sales selected from Land Registry data. Supporting evidence for valuation challenge."
+
+    rejectedExample:
+      key: zoopla-estimate
+      label: "Zoopla/Rightmove estimate"
+      reason: "Automated valuation models are not accepted. The VOA requires a RICS Red Book valuation from a Registered Valuer."
+
+  liability-wrong:
+    label: "Wrong liable person"
+    colour: red
+    summaryTemplate: "Currently liable: {liableEntity}"
+    evidenceTypes:
+      - key: land-registry-title
+        label: "Land Registry title deed"
+        icon: "M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z"
+        description: "Official title register showing current registered owner"
+        acceptedFormats: [PDF]
+        requirements:
+          - "Official HMLR document"
+          - "Current edition"
+        impact: primary
+        sim:
+          strength: 35
+          verdict: accepted
+          checks:
+            - "File type: PDF — approved"
+            - "Source: HM Land Registry — verified"
+            - "Title number: valid"
+            - "Ownership: differs from HVCTS record"
+          assessmentTemplate: "Land Registry title confirms different registered owner to HVCTS record. Strong primary evidence for liability challenge."
+
+      - key: trust-deed
+        label: "Trust deed or company records"
+        icon: "M19 21V5a2 2 0 00-2-2H7a2 2 0 00-2 2v16m14 0H5m14 0h2m-2 0h-5M9 7h1m-1 4h1m4-4h1m-1 4h1m-5 10v-5h4v5"
+        description: "Trust registration or Companies House records"
+        acceptedFormats: [PDF]
+        requirements:
+          - "Official document"
+          - "Current"
+        impact: supporting
+        sim:
+          strength: 20
+          verdict: accepted
+          checks:
+            - "File type: PDF — approved"
+            - "Source: verified against TRS/Companies House"
+            - "Records: current and active"
+          assessmentTemplate: "Trust/company records verified. Supporting evidence for liability challenge."
+
+    rejectedExample:
+      key: solicitor-letter
+      label: "Solicitor letter (unsworn)"
+      reason: "Unsworn correspondence is not accepted. Provide official Land Registry or Companies House documentation."
+
+  split-merge:
+    label: "Property restructured"
+    colour: "#6f72af"
+    summary: "Property split, merged, or demolished"
+    evidenceTypes:
+      - key: planning-permission
+        label: "Planning permission"
+        icon: "M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2m-6 9l2 2 4-4"
+        description: "Approved planning permission for split, conversion, or demolition"
+        acceptedFormats: [PDF]
+        requirements:
+          - "Local authority approval"
+          - "Application reference"
+        impact: primary
+        sim:
+          strength: 35
+          verdict: accepted
+          checks:
+            - "File type: PDF — approved"
+            - "Authority: local planning authority — verified"
+            - "Status: approved"
+            - "Scope: property subdivision confirmed"
+          assessmentTemplate: "Planning permission confirms approved subdivision. Strong primary evidence for restructure challenge."
+
+      - key: building-control
+        label: "Building control certificate"
+        icon: "M19.428 15.428a2 2 0 00-1.022-.547l-2.387-.477a6 6 0 00-3.86.517l-.318.158a6 6 0 01-3.86.517L6.05 15.21a2 2 0 00-1.806.547M8 4h8l-1 1v5.172a2 2 0 00.586 1.414l5 5c1.26 1.26.367 3.414-1.415 3.414H4.828c-1.782 0-2.674-2.154-1.414-3.414l5-5A2 2 0 009 10.172V5L8 4z"
+        description: "Completion certificate for building works"
+        acceptedFormats: [PDF]
+        requirements:
+          - "Building control body"
+          - "Completion confirmed"
+        impact: supporting
+        sim:
+          strength: 25
+          verdict: accepted
+          checks:
+            - "File type: PDF — approved"
+            - "Issuer: approved building control body"
+            - "Status: completion confirmed"
+          assessmentTemplate: "Building control certificate confirms works completed. Supporting evidence for restructure challenge."
+
+    rejectedExample:
+      key: architect-proposal
+      label: "Architect proposal (unapproved)"
+      reason: "Unapproved proposals do not demonstrate an actual change. Provide approved planning permission."

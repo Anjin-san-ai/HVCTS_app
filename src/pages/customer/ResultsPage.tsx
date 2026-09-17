@@ -5,19 +5,13 @@ import { Tag, formatCurrency } from '../../components/common';
 import { useAppStore } from '../../stores/appStore';
 import { getNearbyHighValueSales, lookupPostcode } from '../../services/api';
 import { buildPropertyFromTransaction, formatPropertyType } from '../../services/caseBuilder';
+import { determineBand } from '../../data/properties';
+import { GDS_COLOURS } from '../../config/gds';
 import type { LandRegistryTransaction, PostcodeResult } from '../../types';
 
 const BAND_COLORS: Record<string, 'turquoise' | 'purple' | 'red' | 'orange' | 'default'> = {
   H1: 'default', H2: 'turquoise', H3: 'purple', H4: 'orange', H5: 'red',
 };
-
-function determineBand(price: number) {
-  if (price >= 20_000_000) return 'H5';
-  if (price >= 10_000_000) return 'H4';
-  if (price >= 5_000_000) return 'H3';
-  if (price >= 2_500_000) return 'H2';
-  return 'H1';
-}
 
 export function ResultsPage() {
   const navigate = useNavigate();
@@ -145,7 +139,7 @@ export function ResultsPage() {
                 <tr key={i} style={{ cursor: 'pointer' }} onClick={() => handleSelectLrTransaction(tx)}>
                   <td className="govuk-table__cell" style={{ fontSize: 14 }}>
                     <strong>{tx.address}</strong><br />
-                    <span style={{ color: '#505a5f' }}>{tx.postcode}</span>
+                    <span style={{ color: GDS_COLOURS.midGrey }}>{tx.postcode}</span>
                   </td>
                   <td className="govuk-table__cell"><strong>{formatCurrency(tx.price)}</strong></td>
                   <td className="govuk-table__cell"><Tag color={BAND_COLORS[band]}>{band}</Tag></td>

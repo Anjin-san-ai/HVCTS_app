@@ -62,7 +62,7 @@ export interface ComparableProperty {
   garden?: boolean;
   garage?: string;
   matchStrength?: 'strong' | 'moderate' | 'weak';
-  source: 'land-registry' | 'voa' | 'avm';
+  source: 'land-registry' | 'voa' | 'avm' | 'manual';
 }
 
 export interface ValuationFactor {
@@ -136,6 +136,18 @@ export interface LandRegistryTransaction {
   propertyType: string;
   estateType: string;
 }
+
+export type GateKey = 'valuation' | 'comparables' | 'ownership' | 'bandAssessment' | 'evidenceReview' | 'finalDecision';
+
+export interface GateState {
+  status: 'pending' | 'approved' | 'overridden' | 'rejected';
+  aiValue: string;
+  caseworkerValue?: string;
+  reason?: string;
+  timestamp?: string;
+}
+
+export type CaseworkerTab = 'brief' | 'research' | 'evidence' | 'ownership' | 'decision' | 'timeline';
 
 export interface DashboardStats {
   openCases: number;

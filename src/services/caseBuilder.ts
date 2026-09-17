@@ -1,6 +1,5 @@
 import type { CaseworkerCase, Property, LandRegistryTransaction, PostcodeResult } from '../types';
-import { BAND_THRESHOLDS } from '../data/properties';
-import type { HvctsBand } from '../types';
+import { BAND_THRESHOLDS, determineBand } from '../data/properties';
 
 const PROPERTY_TYPE_LABELS: Record<string, string> = {
   'detached': 'Detached',
@@ -14,14 +13,6 @@ const PROPERTY_TYPE_LABELS: Record<string, string> = {
 
 export function formatPropertyType(raw: string): string {
   return PROPERTY_TYPE_LABELS[raw] || raw.replace(/([A-Z])/g, ' $1').replace(/^./, s => s.toUpperCase());
-}
-
-function determineBand(price: number): HvctsBand {
-  if (price >= 20_000_000) return 'H5';
-  if (price >= 10_000_000) return 'H4';
-  if (price >= 5_000_000) return 'H3';
-  if (price >= 2_500_000) return 'H2';
-  return 'H1';
 }
 
 function mapPropertyType(lrType: string): Property['propertyType'] {
@@ -82,14 +73,14 @@ function generateReference(): string {
   return `HVCTS-2028-${seq}`;
 }
 
-function determinePriority(price: number): { priority: CaseworkerCase['priority']; label: string } {
+function determinePriority(price: number, _estateType: string): { priority: CaseworkerCase['priority']; label: string } {
   if (price >= 20_000_000) return { priority: 'P1', label: 'P1 Urgent' };
   if (price >= 10_000_000) return { priority: 'P2', label: 'P2 Complex' };
   if (price >= 5_000_000) return { priority: 'P3', label: 'P3 Standard' };
   return { priority: 'P4', label: 'P4 Routine' };
 }
 
-function generateOwnership(price: number, estateType: string) {
+function generateOwnership(_address: string, price: number, estateType: string) {
   const isHighValue = price > 10_000_000;
   const isLeasehold = estateType === 'leasehold';
 
@@ -175,7 +166,7 @@ export function buildPropertyFromTransaction(
       propertyAge: 'Unknown — EPC lookup required',
       status: 'pending',
     },
-    ownership: generateOwnership(tx.price, estate),
+    ownership: generateOwnership(tx.address, tx.price, estate),
     comparables,
     factors: [
       {
@@ -201,7 +192,7 @@ export function buildCaseFromTransaction(
 ): CaseworkerCase {
   const property = buildPropertyFromTransaction(tx, postcodeData, nearbyTransactions);
   const estate = mapEstateType(tx.estateType);
-  const { priority, label } = determinePriority(tx.price);
+  const { priority, label } = determinePriority(tx.price, estate);
 
   const tags = [
     `Band ${property.hvctsBand}`,

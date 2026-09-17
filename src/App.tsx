@@ -13,6 +13,7 @@ import { ChatPage } from './pages/customer/ChatPage';
 import { EvidencePage } from './pages/customer/EvidencePage';
 import { ReviewPage } from './pages/customer/ReviewPage';
 import { ConfirmationPage } from './pages/customer/ConfirmationPage';
+import { PropertyStoryPage } from './pages/customer/PropertyStoryPage';
 import { DashboardPage } from './pages/caseworker/DashboardPage';
 import { CaseDetailPage } from './pages/caseworker/CaseDetailPage';
 import { useAuthStore } from './stores/authStore';
@@ -40,6 +41,7 @@ export default function App() {
           <Route path="/evidence" element={<EvidencePage />} />
           <Route path="/review" element={<ReviewPage />} />
           <Route path="/confirmation" element={<ConfirmationPage />} />
+          <Route path="/assessment" element={<PropertyStoryPage />} />
           <Route path="/caseworker" element={<DashboardPage />} />
           <Route path="/caseworker/case" element={<CaseDetailPage />} />
         </Route>

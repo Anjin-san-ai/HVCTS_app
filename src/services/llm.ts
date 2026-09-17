@@ -1,4 +1,4 @@
-import type { CaseworkerCase, ChallengeReason, ChatMessage } from '../types';
+import type { CaseworkerCase, ChallengeReason, ChatMessage, ComparableProperty } from '../types';
 
 const API_BASE = '/api/ai';
 
@@ -24,8 +24,9 @@ async function post<T = Record<string, unknown>>(endpoint: string, body: Record<
   }
 }
 
-function buildCasePayload(c: CaseworkerCase): Record<string, unknown> {
+function buildCasePayload(c: CaseworkerCase, allComparables?: ComparableProperty[]): Record<string, unknown> {
   const { property } = c;
+  const comparables = allComparables ?? property.comparables;
   return {
     reference: c.reference,
     challengeType: c.challengeType,
@@ -38,8 +39,8 @@ function buildCasePayload(c: CaseworkerCase): Record<string, unknown> {
     ownershipConfidence: property.ownership.confidence,
     aiConfidence: c.aiConfidence,
     evidenceSummary: c.evidence.map((e) => `${e.description} (${e.score}% - ${e.strength})`).join('; ') || 'No evidence submitted',
-    comparablesSummary: property.comparables.map((cp) =>
-      `${cp.address}: £${cp.salePrice.toLocaleString()} (${cp.saleDate})${cp.floorArea ? `, ${cp.floorArea}sqm` : ''}`
+    comparablesSummary: comparables.map((cp) =>
+      `${cp.address}: £${cp.salePrice.toLocaleString()} (${cp.saleDate})${cp.floorArea ? `, ${cp.floorArea}sqm` : ''}${cp.source === 'manual' ? ' [CASEWORKER SELECTED]' : ''}`
     ).join('; ') || 'No comparables',
     padSummary: `${property.pad.bedrooms}bed/${property.pad.bathrooms}bath, ${property.pad.floorArea}sqm, ${property.propertyType}, ${property.pad.propertyAge || 'unknown age'}`,
   };
@@ -91,38 +92,35 @@ export interface DecisionLetterData {
   closing: string;
 }
 
-export async function checkHealth(): Promise<{ configured: boolean; deployment: string | null }> {
-  try {
-    const res = await fetch(`${API_BASE}/health`);
-    return await res.json();
-  } catch {
-    return { configured: false, deployment: null };
-  }
+export async function fetchCaseBrief(caseData: CaseworkerCase, allComparables?: ComparableProperty[]): Promise<AiResponse<CaseBriefData>> {
+  return post<CaseBriefData>('/case-brief', buildCasePayload(caseData, allComparables));
 }
 
-export async function fetchCaseBrief(caseData: CaseworkerCase): Promise<AiResponse<CaseBriefData>> {
-  return post<CaseBriefData>('/case-brief', buildCasePayload(caseData));
+export async function fetchResearch(caseData: CaseworkerCase, allComparables?: ComparableProperty[]): Promise<AiResponse<ResearchData>> {
+  return post<ResearchData>('/research', buildCasePayload(caseData, allComparables));
 }
 
-export async function fetchResearch(caseData: CaseworkerCase): Promise<AiResponse<ResearchData>> {
-  return post<ResearchData>('/research', buildCasePayload(caseData));
+export async function fetchDecision(caseData: CaseworkerCase, allComparables?: ComparableProperty[]): Promise<AiResponse<DecisionData>> {
+  return post<DecisionData>('/decision', buildCasePayload(caseData, allComparables));
 }
 
-export async function fetchDecision(caseData: CaseworkerCase): Promise<AiResponse<DecisionData>> {
-  return post<DecisionData>('/decision', buildCasePayload(caseData));
-}
-
-export async function fetchDecisionLetter(caseData: CaseworkerCase, decision: string): Promise<AiResponse<DecisionLetterData>> {
-  return post<DecisionLetterData>('/decision-letter', { ...buildCasePayload(caseData), decision });
+export async function fetchDecisionLetter(caseData: CaseworkerCase, decision: string, allComparables?: ComparableProperty[]): Promise<AiResponse<DecisionLetterData>> {
+  return post<DecisionLetterData>('/decision-letter', { ...buildCasePayload(caseData, allComparables), decision });
 }
 
 export interface AssistantData {
   answer: string;
 }
 
-export async function fetchAssistant(caseData: CaseworkerCase, question: string, conversationHistory?: string): Promise<AiResponse<AssistantData>> {
-  return post<AssistantData>('/assistant', { ...buildCasePayload(caseData), question, conversationHistory });
+export async function fetchAssistant(caseData: CaseworkerCase, question: string, conversationHistory?: string, allComparables?: ComparableProperty[]): Promise<AiResponse<AssistantData>> {
+  return post<AssistantData>('/assistant', { ...buildCasePayload(caseData, allComparables), question, conversationHistory });
 }
+
+// ─── Citizen chat intake (Chat(alt)) ─────────────────────────────────
+//
+// The conversational alternative to the step-by-step citizen form. The model
+// returns its next reply plus structured field updates for the same case
+// record the form would produce, so progress carries across both views.
 
 export interface ChatIntakeUpdates {
   postcode?: string;

@@ -1,0 +1,108 @@
+# AI Response Templates for Advisory & Informational Intents
+# ───────────────────────────────────────────────────────────
+# Templates use markdown formatting. Variables in {braces} are
+# interpolated at runtime from property and case context.
+#
+# These templates can be updated by the content team without
+# code changes. In production, they would live in a CMS or DB.
+
+version: "1.0"
+lastUpdated: "2028-04-01"
+
+responses:
+  financial-hardship: |
+    I understand this is a difficult situation, and I want to make sure you're aware of all the support available to you. If you're experiencing financial hardship, you may be eligible for:
+
+    • **Payment plan** — spread the surcharge across monthly instalments
+    • **Hardship relief** — a reduction or deferral if you meet the criteria
+    • **Referral to debt advice** — free, confidential support from StepChange or Citizens Advice
+
+    The VOA has a dedicated hardship team. Would you like me to provide their contact details, or would you prefer to explore whether you qualify for an exemption first?
+
+  payment-plan: |
+    The VOA offers several payment options for HVCTS surcharges:
+
+    • **Monthly instalments** — spread the annual charge over 10 or 12 months by direct debit
+    • **Deferred payment** — delay payment for up to 6 months if you can demonstrate temporary difficulty
+    • **Partial payment** — if you're on certain means-tested benefits, you may qualify for a reduced rate
+
+    To set up a payment plan, contact the VOA payment team on 03000 501 501 (Monday–Friday, 8am–6pm). You'll need your HVCTS reference number and bank details.
+
+  exemption: |
+    Certain properties and owners may be exempt from HVCTS. Common exemptions include:
+
+    • **Charitable use** — property used wholly for charitable purposes
+    • **Diplomatic property** — embassies and consular buildings
+    • **Crown property** — property owned by the Crown
+    • **Demolished or derelict** — property that has been demolished or is uninhabitable
+    • **Below threshold on revaluation** — if you believe the property value has fallen below {bandH1Min}
+
+    If you think an exemption applies, I can guide you through a formal challenge. Otherwise, contact the VOA to discuss your specific circumstances.
+
+  deadline: |
+    Important deadlines for your HVCTS assessment:
+
+    • **Challenge deadline:** 28 days from the date of your assessment notice to submit a formal challenge
+    • **Appeal to VT:** if your challenge is rejected, you have a further 28 days to appeal to the Valuation Tribunal
+    • **Payment due:** the surcharge is due within 30 days of the assessment notice, even if a challenge is in progress
+
+    If you've missed the 28-day challenge window, you may still be able to apply for a late challenge on grounds of reasonable excuse. Would you like help with that?
+
+  complaint: |
+    I understand your frustration. If you believe the HVCTS process has been handled incorrectly, you have several options:
+
+    • **Formal challenge** — if you believe the assessment itself is wrong (band, value, liability), I can guide you through the evidence process right now
+    • **Formal complaint** — about how the VOA has handled your case, via the VOA complaints procedure
+    • **Ombudsman** — if a complaint to the VOA is not resolved, you can escalate to the Parliamentary and Health Service Ombudsman
+    • **Judicial review** — in exceptional circumstances, via the High Court
+
+    Would you like to start a formal challenge against your assessment, or are you looking to make a complaint about the process?
+
+  disposal: |
+    If you've sold or transferred this property, you should no longer be liable for the HVCTS surcharge from the date of disposal. To update the records:
+
+    • **Provide evidence of sale** — a completion statement, TR1 transfer form, or updated Land Registry title
+    • **Date of disposal** — you'll be liable for the surcharge up to the date of transfer, and the new owner from that date onwards
+
+    I can help you submit evidence of disposal as a liability challenge. The ownership chain for this property currently shows {liableEntity} as liable — if that's no longer correct, we should update it. Would you like to start that process?
+
+  vulnerability: |
+    If you or someone in your household has special circumstances — such as a disability, serious illness, or caring responsibilities — additional support is available:
+
+    • **Reasonable adjustments** — the VOA can provide information in alternative formats, allow extra time for responses, or arrange home visits
+    • **Hardship considerations** — vulnerability is taken into account when assessing hardship relief applications
+    • **Advocacy support** — Citizens Advice and local authority welfare teams can help you navigate the process
+
+    Your circumstances won't affect the assessment itself, but they can affect how the process is managed and what payment support is available. Would you like me to connect you with the VOA's dedicated support team?
+
+  contact: |
+    You can reach the VOA HVCTS team through:
+
+    • **Phone:** 03000 501 501 (Monday–Friday, 8am–6pm)
+    • **Online:** via the GOV.UK HVCTS service
+    • **Post:** Valuation Office Agency, HVCTS Team, Wycliffe House, Green Lane, Durham DH1 3UW
+
+    If you need to speak to someone about a specific case, have your HVCTS reference number ready. For general enquiries about the surcharge, the phone team can help immediately. Would you also like to start building a formal challenge through this assistant?
+
+  help: |
+    I can help you with several things:
+
+    • **Understand your assessment** — explain your band, valuation, and why you're liable
+    • **Challenge your assessment** — if you believe the property details, valuation, or liability is wrong
+    • **Payment support** — information about payment plans and hardship relief
+    • **Exemptions** — check if your property or circumstances qualify for an exemption
+    • **Deadlines** — understand the timeline for challenges and appeals
+
+    What would you like to explore? You can describe your concern in your own words — I'll identify the best path forward.
+
+  comprehension: |
+    Your property at {addressLine1} is assessed at {estimatedValue} in Band {hvctsBand}. The valuation used {comparableCount} comparable sales and {factorCount} property factors. What specifically concerns you about this assessment?
+
+  fallback: |
+    I hear you. To make sure I guide you to the right support, could you help me understand a bit more? For example:
+
+    • If you're struggling financially, I can explain payment plans and hardship relief
+    • If you think the assessment is wrong, I can help you build a formal challenge
+    • If you're unsure what this surcharge is, I can explain how it works
+
+    You can describe your situation in any way that feels natural — I'll work out the best next step.

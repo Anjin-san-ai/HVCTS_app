@@ -1,61 +1,142 @@
 import { Link, useLocation, useNavigate } from 'react-router-dom';
+import { useEffect } from 'react';
 import type { ReactNode } from 'react';
 import crownSvg from '../../assets/govuk-crest.svg';
 import { useAuthStore } from '../../stores/authStore';
 import { useAppStore } from '../../stores/appStore';
+import type { Persona } from '../../stores/appStore';
 
-const SCREENS = [
-  { path: '/', label: '1. Start' },
-  { path: '/search', label: '2. Search' },
-  { path: '/results', label: '3. Results' },
-  { path: '/property', label: '4. Property' },
-  { path: '/liability', label: '5. Liability' },
-  { path: '/challenge', label: '6. Challenge' },
-  { path: '/evidence', label: '7. Evidence' },
-  { path: '/review', label: '8. Review' },
-  { path: '/confirmation', label: '9. Confirmed' },
+// The RAIO (Responsible AI Officer) persona oversees the AI estate rather than
+// individual cases, so it shares the caseworker routes. Selecting it is what
+// reveals the AI Governance entry point on the caseworker dashboard.
+const RAIO_ITEMS = [
+  { path: '/caseworker', label: 'Governance' },
+];
+
+const CITIZEN_ITEMS = [
+  { path: '/', label: 'Start' },
+  { path: '/search', label: 'Search' },
+  { path: '/results', label: 'Results' },
+  { path: '/property', label: 'Property' },
+  { path: '/liability', label: 'Liability' },
+  { path: '/challenge', label: 'Challenge' },
+  { path: '/evidence', label: 'Evidence' },
+  { path: '/review', label: 'Review' },
+  { path: '/confirmation', label: 'Confirmed' },
   { path: '/chat', label: 'Chat (alt)' },
 ];
 
-const CW_SCREENS = [
-  { path: '/caseworker', label: 'CW: Dashboard' },
-  { path: '/caseworker/case', label: 'CW: Case' },
+const STORY_ITEMS = [
+  { path: '/assessment', step: '', label: 'Start' },
+  { path: '/assessment?step=search', step: 'search', label: 'Search' },
+  { path: '/assessment?step=results', step: 'results', label: 'Results' },
+  { path: '/assessment?step=signin', step: 'signin', label: 'Sign in' },
+  { path: '/assessment?step=view', step: 'view', label: 'Assessment' },
 ];
+
+const CW_ITEMS = [
+  { path: '/caseworker', label: 'Dashboard' },
+  { path: '/caseworker/case', label: 'Case Detail' },
+];
+
+// Which persona a given route implies. RAIO is deliberately absent: it shares
+// the caseworker routes, so the route alone cannot distinguish the two and the
+// store is the authority for that pair.
+function routePersona(pathname: string): Persona {
+  if (pathname.startsWith('/caseworker')) return 'cw';
+  if (pathname === '/assessment') return 'story';
+  return 'citizen';
+}
 
 export function PrototypeNav() {
   const location = useLocation();
   const navigate = useNavigate();
-  const isCwRoute = location.pathname.startsWith('/caseworker');
+  const persona = useAppStore((s) => s.persona);
+  const setPersona = useAppStore((s) => s.setPersona);
+  const setViewMode = useAppStore((s) => s.setViewMode);
+  const currentStep = new URLSearchParams(location.search).get('step') || '';
+
+  // Keep the persona in step with the route, so a deep link or a browser Back
+  // highlights the right group. RAIO is exempt on the caseworker routes: it
+  // shares them with the caseworker persona, so resetting here would drop the
+  // selection the moment the dashboard rendered.
+  useEffect(() => {
+    const implied = routePersona(location.pathname);
+    if (implied === 'cw' && persona === 'raio') return;
+    if (persona !== implied) setPersona(implied);
+  }, [location.pathname, persona, setPersona]);
+
+  // Selecting a group is what switches persona; the citizen group also keeps
+  // viewMode aligned so the header toggle and the jump bar agree.
+  const go = (next: Persona, path: string) => {
+    setPersona(next);
+    if (next === 'citizen') setViewMode(path === '/chat' ? 'chat' : 'form');
+    navigate(path);
+  };
+
+  const active = persona;
+
   return (
     <div className="prototype-nav-wrapper">
-      <nav className={`prototype-nav prototype-nav--citizen${!isCwRoute ? ' prototype-nav--current' : ''}`}>
-        <span className="prototype-nav__label">CITIZEN JOURNEY</span>
-        {SCREENS.map((s) => (
-          <button
-            key={s.path}
-            className={`prototype-nav__btn${location.pathname === s.path ? ' prototype-nav__btn--active' : ''}`}
-            onClick={() => navigate(s.path)}
-          >
+      {/* RAIO group — first, and the only route to the AI Governance panel */}
+      <div className={`prototype-nav__group${active !== 'raio' ? ' prototype-nav__group--faded' : ''}`}>
+        <span className="prototype-nav__label prototype-nav__label--raio">RAIO</span>
+        {RAIO_ITEMS.map((s) => (
+          <button key={s.path}
+            className={`prototype-nav__btn${active === 'raio' && location.pathname === s.path ? ' prototype-nav__btn--active prototype-nav__btn--raio' : ''}`}
+            onClick={() => go('raio', s.path)}>
             {s.label}
           </button>
         ))}
-      </nav>
-      <nav className={`prototype-nav prototype-nav--caseworker${isCwRoute ? ' prototype-nav--current' : ''}`}>
-        <span className="prototype-nav__label">CASEWORKER</span>
-        {CW_SCREENS.map((s) => (
-          <button
-            key={s.path}
-            className={`prototype-nav__btn prototype-nav__btn--cw${location.pathname === s.path ? ' prototype-nav__btn--active' : ''}`}
-            onClick={() => navigate(s.path)}
-          >
+      </div>
+
+      <div className="prototype-nav-wrapper__divider" />
+
+      {/* Citizen group */}
+      <div className={`prototype-nav__group${active !== 'citizen' ? ' prototype-nav__group--faded' : ''}`}>
+        <span className="prototype-nav__label prototype-nav__label--citizen">Citizen</span>
+        {CITIZEN_ITEMS.map((s) => (
+          <button key={s.path}
+            className={`prototype-nav__btn${active === 'citizen' && location.pathname === s.path ? ' prototype-nav__btn--active prototype-nav__btn--citizen' : ''}`}
+            onClick={() => go('citizen', s.path)}>
             {s.label}
           </button>
         ))}
-      </nav>
+      </div>
+
+      <div className="prototype-nav-wrapper__divider" />
+
+      {/* AI Citizen group */}
+      <div className={`prototype-nav__group${active !== 'story' ? ' prototype-nav__group--faded' : ''}`}>
+        <span className="prototype-nav__label prototype-nav__label--story">AI Citizen</span>
+        {STORY_ITEMS.map((s) => (
+          <button key={s.path}
+            className={`prototype-nav__btn${active === 'story' && currentStep === s.step ? ' prototype-nav__btn--active prototype-nav__btn--story' : ''}`}
+            onClick={() => go('story', s.path)}>
+            {s.label}
+          </button>
+        ))}
+      </div>
+
+      <div className="prototype-nav-wrapper__divider" />
+
+      {/* Caseworker group */}
+      <div className={`prototype-nav__group${active !== 'cw' ? ' prototype-nav__group--faded' : ''}`}>
+        <span className="prototype-nav__label prototype-nav__label--cw">Caseworker</span>
+        {CW_ITEMS.map((s) => (
+          <button key={s.path}
+            className={`prototype-nav__btn${active === 'cw' && location.pathname === s.path ? ' prototype-nav__btn--active prototype-nav__btn--cw' : ''}`}
+            onClick={() => go('cw', s.path)}>
+            {s.label}
+          </button>
+        ))}
+      </div>
     </div>
   );
 }
 
+// Routes where the form/chat toggle makes sense — the classic citizen journey
+// plus the conversational alternative it swaps to.
 const CITIZEN_FORM_ROUTES = new Set([
   '/', '/search', '/results', '/property', '/liability', '/challenge', '/evidence', '/review', '/confirmation',
 ]);
@@ -124,11 +205,8 @@ export function Footer() {
   return (
     <footer className="govuk-footer">
       <div className="govuk-footer__meta">
-        <div>
-          <p>HVCTS AI-Augmented Prototype — Cognizant × HMRC × VOA</p>
-          <p style={{ marginTop: 5 }}>Built with GOV.UK Design System patterns. Property data from HM Land Registry. For demonstration purposes only.</p>
-        </div>
-        <img className="cognizant-footer-logo" src="/Cognizantlogo.png" alt="Cognizant" />
+        <p>HVCTS AI-Augmented Prototype — Cognizant × HMRC × VOA</p>
+        <p style={{ marginTop: 5 }}>Built with GOV.UK Design System patterns. Property data from HM Land Registry. For demonstration purposes only.</p>
       </div>
     </footer>
   );

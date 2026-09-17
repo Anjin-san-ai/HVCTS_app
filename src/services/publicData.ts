@@ -2,6 +2,8 @@
 // Public-data overlay services – UK open APIs for property research
 // ---------------------------------------------------------------------------
 
+import { API } from '../config/api';
+
 // ── Interfaces ──────────────────────────────────────────────────────────────
 
 export interface EpcRecord {
@@ -16,7 +18,7 @@ export interface EpcRecord {
   lodgementDate: string;
 }
 
-export interface FloodArea {
+interface FloodArea {
   label: string;
   description: string;
   riskLevel: string;
@@ -27,22 +29,15 @@ export interface FloodRiskResult {
   floodAreas: FloodArea[];
 }
 
-export interface CrimeCategory {
+interface CrimeCategory {
   category: string;
   count: number;
 }
 
-export interface CrimeDataResult {
+interface CrimeDataResult {
   total: number;
   categories: CrimeCategory[];
   monthYear: string;
-}
-
-export interface NearbyPostcode {
-  postcode: string;
-  distance: number;
-  latitude: number;
-  longitude: number;
 }
 
 export interface PlanningApplication {
@@ -65,11 +60,16 @@ export interface SchoolResult {
   lng: number;
 }
 
-// ── Helpers ─────────────────────────────────────────────────────────────────
+export interface TransportStation {
+  name: string;
+  type: 'tube' | 'rail';
+  distance: number;
+  lat: number;
+  lng: number;
+  line?: string;
+}
 
-const FLOOD_API = 'https://environment.data.gov.uk/flood-monitoring/id/floodAreas';
-const CRIME_API = 'https://data.police.uk/api/crimes-street/all-crime';
-const POSTCODES_API = 'https://api.postcodes.io/postcodes';
+// ── Helpers ─────────────────────────────────────────────────────────────────
 
 const TIMEOUT_MS = 8_000;
 
@@ -115,7 +115,7 @@ const FLOOD_FALLBACK: FloodRiskResult = { riskLevel: 'unknown', floodAreas: [] }
 export async function fetchFloodRisk(lat: number, lng: number): Promise<FloodRiskResult> {
   try {
     const res = await fetch(
-      `${FLOOD_API}?lat=${lat}&long=${lng}&dist=1`,
+      `${API.flood}?lat=${lat}&long=${lng}&dist=1`,
       { signal: timeoutSignal() },
     );
     if (!res.ok) return FLOOD_FALLBACK;
@@ -155,54 +155,38 @@ export async function fetchFloodRisk(lat: number, lng: number): Promise<FloodRis
 const CRIME_FALLBACK: CrimeDataResult = { total: 0, categories: [], monthYear: '' };
 
 export async function fetchCrimeData(lat: number, lng: number): Promise<CrimeDataResult> {
-  try {
-    const res = await fetch(
-      `${CRIME_API}?lat=${lat}&lng=${lng}&date=2024-06`,
-      { signal: timeoutSignal() },
-    );
-    if (!res.ok) return CRIME_FALLBACK;
-    const crimes: Record<string, unknown>[] = await res.json();
-    if (!Array.isArray(crimes)) return CRIME_FALLBACK;
+  // Try server proxy first (bypasses corporate SSL)
+  const urls = [
+    `/api/crime?lat=${lat}&lng=${lng}`,
+    `${API.crime}?lat=${lat}&lng=${lng}`,
+  ];
 
-    const counts = new Map<string, number>();
-    for (const c of crimes) {
-      const cat = String(c.category ?? 'other');
-      counts.set(cat, (counts.get(cat) ?? 0) + 1);
+  for (const url of urls) {
+    try {
+      const res = await fetch(url, { signal: timeoutSignal() });
+      if (!res.ok) continue;
+      const crimes: Record<string, unknown>[] = await res.json();
+      if (!Array.isArray(crimes) || crimes.length === 0) continue;
+
+      const counts = new Map<string, number>();
+      for (const c of crimes) {
+        const cat = String(c.category ?? 'other');
+        counts.set(cat, (counts.get(cat) ?? 0) + 1);
+      }
+
+      const categories: CrimeCategory[] = Array.from(counts.entries())
+        .map(([category, count]) => ({ category, count }))
+        .sort((a, b) => b.count - a.count);
+
+      return { total: crimes.length, categories, monthYear: 'recent' };
+    } catch {
+      continue;
     }
-
-    const categories: CrimeCategory[] = Array.from(counts.entries())
-      .map(([category, count]) => ({ category, count }))
-      .sort((a, b) => b.count - a.count);
-
-    return { total: crimes.length, categories, monthYear: '2024-06' };
-  } catch {
-    return CRIME_FALLBACK;
   }
+  return CRIME_FALLBACK;
 }
 
-// ── 4. Nearby postcodes ─────────────────────────────────────────────────────
-
-export async function fetchNearbyPostcodes(lat: number, lng: number): Promise<NearbyPostcode[]> {
-  try {
-    const res = await fetch(
-      `${POSTCODES_API}?lon=${lng}&lat=${lat}&radius=500&limit=10`,
-      { signal: timeoutSignal() },
-    );
-    if (!res.ok) return [];
-    const data = await res.json();
-    const results: Record<string, unknown>[] = data?.result ?? [];
-    return results.map((r) => ({
-      postcode: String(r.postcode ?? ''),
-      distance: Number(r.distance ?? 0),
-      latitude: Number(r.latitude ?? 0),
-      longitude: Number(r.longitude ?? 0),
-    }));
-  } catch {
-    return [];
-  }
-}
-
-// ── 5. Property sale history (Land Registry Price Paid – specific address) ──
+// ── 4. Property sale history (Land Registry Price Paid – specific address) ──
 
 export interface PropertySaleRecord {
   date: string;
@@ -213,8 +197,6 @@ export interface PropertySaleRecord {
   estateType: 'freehold' | 'leasehold';
   newBuild: boolean;
 }
-
-const LR_PPD_API = 'https://landregistry.data.gov.uk/data/ppi';
 
 export async function fetchPropertySaleHistory(
   address: string,
@@ -233,7 +215,7 @@ export async function fetchPropertySaleHistory(
     if (saon) query.set('propertyAddress.saon', saon.toUpperCase());
 
     const res = await fetch(
-      `${LR_PPD_API}/transaction-record.json?${query}`,
+      `${API.landRegistry}/transaction-record.json?${query}`,
       { signal: timeoutSignal() },
     );
     if (!res.ok) return [];
@@ -501,7 +483,7 @@ export interface OwnershipTimelineEntry {
   notes: string;
 }
 
-export interface OwnershipNodeInput {
+interface OwnershipNodeInput {
   source: string;
   entity: string;
   role: string;
@@ -602,7 +584,34 @@ export function generateOwnershipTimeline(
 
 // ── 9. Planning constraints (planning.data.gov.uk — real API) ────────────────
 
-const PLANNING_DATA_API = 'https://www.planning.data.gov.uk/entity.json';
+function parsePlanningEntities(entities: Record<string, unknown>[]): PlanningApplication[] {
+  return entities.map((entity) => {
+    const ref = String(entity.reference ?? entity.entity ?? '');
+    const name = String(entity.name ?? '');
+    const startDate = String(entity['start-date'] ?? entity['entry-date'] ?? '');
+    const dataset = String(entity.dataset ?? '');
+    const isListedBuilding = dataset.includes('listed-building') || name.toLowerCase().includes('listed');
+
+    let eLat: number | undefined;
+    let eLng: number | undefined;
+    const pointStr = String(entity.point ?? '');
+    const wktMatch = pointStr.match(/POINT\(([-.0-9]+)\s+([-.0-9]+)\)/);
+    if (wktMatch) { eLng = parseFloat(wktMatch[1]); eLat = parseFloat(wktMatch[2]); }
+
+    return {
+      reference: ref,
+      description: isListedBuilding
+        ? `Listed building: ${name || 'See Historic England entry'}`
+        : `Conservation area: ${name || 'Designated area'}`,
+      status: 'approved' as const,
+      dateReceived: startDate || 'Pre-2000',
+      address: name,
+      type: isListedBuilding ? 'listed-building' as const : 'full' as const,
+      lat: eLat,
+      lng: eLng,
+    };
+  });
+}
 
 export async function fetchPlanningData(
   _postcode: string,
@@ -611,80 +620,34 @@ export async function fetchPlanningData(
 ): Promise<PlanningApplication[]> {
   if (!lat || !lng) return [];
 
-  const results: PlanningApplication[] = [];
+  // Try server proxy first (bypasses CORS)
+  try {
+    const res = await fetch(`/api/planning?lat=${lat}&lng=${lng}`, { signal: timeoutSignal() });
+    if (res.ok) {
+      const data = await res.json();
+      const entities: Record<string, unknown>[] = data?.entities ?? [];
+      if (entities.length > 0) return parsePlanningEntities(entities);
+    }
+  } catch { /* fall through to direct call */ }
 
-  // Query listed buildings and conservation areas near the property
+  // Direct browser call (fallback)
+  const results: PlanningApplication[] = [];
   const datasets = ['listed-building-outline', 'conservation-area'];
 
   for (const dataset of datasets) {
     try {
       const point = `POINT(${lng} ${lat})`;
-      const url = `${PLANNING_DATA_API}?dataset=${dataset}&geometry=${encodeURIComponent(point)}&geometry_relation=intersects&limit=10`;
+      const url = `${API.planningData}?dataset=${dataset}&geometry=${encodeURIComponent(point)}&geometry_relation=intersects&limit=10`;
       const res = await fetch(url, { signal: timeoutSignal() });
       if (!res.ok) continue;
       const data = await res.json();
       const entities: Record<string, unknown>[] = data?.entities ?? [];
-
       for (const entity of entities) {
-        const ref = String(entity.reference ?? entity.entity ?? '');
-        const name = String(entity.name ?? '');
-        const startDate = String(entity['start-date'] ?? entity['entry-date'] ?? '');
-        const isListedBuilding = dataset.includes('listed-building');
-
-        let eLat: number | undefined;
-        let eLng: number | undefined;
-        const pointStr = String(entity.point ?? '');
-        const wktMatch = pointStr.match(/POINT\(([-.0-9]+)\s+([-.0-9]+)\)/);
-        if (wktMatch) { eLng = parseFloat(wktMatch[1]); eLat = parseFloat(wktMatch[2]); }
-
-        results.push({
-          reference: ref,
-          description: isListedBuilding
-            ? `Listed building: ${name || 'See Historic England entry'}`
-            : `Conservation area: ${name || 'Designated area'}`,
-          status: 'approved' as const,
-          dateReceived: startDate || 'Pre-2000',
-          address: name,
-          type: isListedBuilding ? 'listed-building' as const : 'full' as const,
-          lat: eLat,
-          lng: eLng,
-        });
+        (entity as Record<string, unknown>).dataset = dataset;
       }
+      results.push(...parsePlanningEntities(entities));
     } catch {
       // Continue to next dataset
-    }
-  }
-
-  // Also try the non-outline listed building dataset if no results yet
-  if (results.length === 0) {
-    try {
-      const point = `POINT(${lng} ${lat})`;
-      const url = `${PLANNING_DATA_API}?dataset=listed-building&geometry=${encodeURIComponent(point)}&geometry_relation=nearme&limit=10`;
-      const res = await fetch(url, { signal: timeoutSignal() });
-      if (res.ok) {
-        const data = await res.json();
-        const entities: Record<string, unknown>[] = data?.entities ?? [];
-        for (const entity of entities) {
-          let eLat: number | undefined;
-          let eLng: number | undefined;
-          const pointStr = String(entity.point ?? '');
-          const wktMatch = pointStr.match(/POINT\(([-.0-9]+)\s+([-.0-9]+)\)/);
-          if (wktMatch) { eLng = parseFloat(wktMatch[1]); eLat = parseFloat(wktMatch[2]); }
-
-          results.push({
-            reference: String(entity.reference ?? entity.entity ?? ''),
-            description: `Listed building: ${String(entity.name ?? 'Unknown')}`,
-            status: 'approved' as const,
-            dateReceived: String(entity['start-date'] ?? ''),
-            address: String(entity.name ?? ''),
-            type: 'listed-building' as const,
-            lat: eLat,
-            lng: eLng,
-          });
-        }
-      }
-    } catch {
-      // Ignore
     }
   }
 
@@ -693,57 +656,67 @@ export async function fetchPlanningData(
 
 // ── 10. School data (Overpass API — real OpenStreetMap data) ─────────────────
 
-const OVERPASS_API = 'https://overpass-api.de/api/interpreter';
+function parseSchoolElements(elements: Record<string, unknown>[], lat: number, lng: number): SchoolResult[] {
+  const schools: SchoolResult[] = [];
+  const seen = new Set<string>();
+
+  for (const el of elements) {
+    const tags = (el.tags ?? {}) as Record<string, string>;
+    const name = tags.name;
+    if (!name || seen.has(name)) continue;
+    seen.add(name);
+
+    const iscedLevel = tags['isced:level'] || '';
+    const schoolType = (tags['school:type'] || tags.operator_type || '').toLowerCase();
+    let type: SchoolResult['type'] = 'primary';
+    if (iscedLevel.includes('2') || iscedLevel.includes('3') || name.toLowerCase().includes('secondary') || name.toLowerCase().includes('academy') || name.toLowerCase().includes('sixth form') || name.toLowerCase().includes('high school')) {
+      type = 'secondary';
+    }
+    if (schoolType.includes('independent') || schoolType.includes('private') || name.toLowerCase().includes('preparatory') || name.toLowerCase().includes('prep school')) {
+      type = 'independent';
+    }
+
+    const elLat = Number(el.lat ?? (el.center as Record<string, number>)?.lat ?? 0);
+    const elLng = Number(el.lon ?? (el.center as Record<string, number>)?.lon ?? 0);
+    const dist = haversineDistance(lat, lng, elLat, elLng);
+
+    schools.push({
+      name,
+      type,
+      distance: parseFloat((dist * 1000).toFixed(0)),
+      ofstedRating: 'Good',
+      lat: elLat,
+      lng: elLng,
+    });
+  }
+
+  return schools.sort((a, b) => a.distance - b.distance).slice(0, 10);
+}
 
 export async function fetchSchoolData(lat: number, lng: number): Promise<SchoolResult[]> {
+  // Try server proxy first (bypasses corporate SSL)
+  try {
+    const res = await fetch(`/api/schools?lat=${lat}&lng=${lng}&radius=1500`, {
+      signal: AbortSignal.timeout(15000),
+    });
+    if (res.ok) {
+      const data = await res.json();
+      const results = parseSchoolElements(data?.elements ?? [], lat, lng);
+      if (results.length > 0) return results;
+    }
+  } catch { /* fall through to direct call */ }
+
+  // Direct Overpass call (fallback)
   try {
     const radiusMetres = 1500;
     const query = `[out:json][timeout:10];(node["amenity"="school"](around:${radiusMetres},${lat},${lng});way["amenity"="school"](around:${radiusMetres},${lat},${lng}););out center;`;
     const res = await fetch(
-      `${OVERPASS_API}?data=${encodeURIComponent(query)}`,
+      `${API.overpass}?data=${encodeURIComponent(query)}`,
       { signal: timeoutSignal() },
     );
     if (!res.ok) return [];
     const data = await res.json();
-    const elements: Record<string, unknown>[] = data?.elements ?? [];
-
-    const schools: SchoolResult[] = [];
-    const seen = new Set<string>();
-
-    for (const el of elements) {
-      const tags = (el.tags ?? {}) as Record<string, string>;
-      const name = tags.name;
-      if (!name || seen.has(name)) continue;
-      seen.add(name);
-
-      // Determine type from OSM tags
-      const iscedLevel = tags['isced:level'] || '';
-      const schoolType = (tags['school:type'] || tags.operator_type || '').toLowerCase();
-      let type: SchoolResult['type'] = 'primary';
-      if (iscedLevel.includes('2') || iscedLevel.includes('3') || name.toLowerCase().includes('secondary') || name.toLowerCase().includes('academy') || name.toLowerCase().includes('sixth form') || name.toLowerCase().includes('high school')) {
-        type = 'secondary';
-      }
-      if (schoolType.includes('independent') || schoolType.includes('private') || name.toLowerCase().includes('preparatory') || name.toLowerCase().includes('prep school')) {
-        type = 'independent';
-      }
-
-      // Calculate distance from subject property
-      const elLat = Number(el.lat ?? (el.center as Record<string, number>)?.lat ?? 0);
-      const elLng = Number(el.lon ?? (el.center as Record<string, number>)?.lon ?? 0);
-      const dist = haversineDistance(lat, lng, elLat, elLng);
-
-      schools.push({
-        name,
-        type,
-        distance: parseFloat(dist.toFixed(2)),
-        ofstedRating: 'Good',
-        lat: elLat,
-        lng: elLng,
-      });
-    }
-
-    // Sort by distance and limit
-    return schools.sort((a, b) => a.distance - b.distance).slice(0, 10);
+    return parseSchoolElements(data?.elements ?? [], lat, lng);
   } catch {
     return [];
   }
@@ -757,4 +730,50 @@ function haversineDistance(lat1: number, lon1: number, lat2: number, lon2: numbe
     Math.cos(lat1 * Math.PI / 180) * Math.cos(lat2 * Math.PI / 180) *
     Math.sin(dLon / 2) * Math.sin(dLon / 2);
   return R * 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
+}
+
+// ── 11. Transport stations (Overpass API via server proxy) ────────────────────
+
+export async function fetchTransportData(lat: number, lng: number): Promise<TransportStation[]> {
+  try {
+    const res = await fetch(`/api/transport?lat=${lat}&lng=${lng}&radius=1500`, {
+      signal: AbortSignal.timeout(15000),
+    });
+    if (!res.ok) return [];
+    const data = await res.json();
+    const elements: Record<string, unknown>[] = data?.elements ?? [];
+
+    const stations: TransportStation[] = [];
+    const seen = new Set<string>();
+
+    for (const el of elements) {
+      const tags = (el.tags ?? {}) as Record<string, string>;
+      const name = tags.name;
+      if (!name || seen.has(name)) continue;
+      seen.add(name);
+
+      let type: TransportStation['type'] = 'rail';
+      if (tags.station === 'subway' || (tags.network || '').includes('Underground') || (tags.network || '').includes('Tube') || name.includes('Underground')) {
+        type = 'tube';
+      }
+
+      const elLat = Number(el.lat ?? 0);
+      const elLng = Number(el.lon ?? 0);
+      if (!elLat || !elLng) continue;
+      const dist = haversineDistance(lat, lng, elLat, elLng);
+
+      stations.push({
+        name,
+        type,
+        distance: parseFloat((dist * 1000).toFixed(0)),
+        lat: elLat,
+        lng: elLng,
+        line: tags.line || tags.network || undefined,
+      });
+    }
+
+    return stations.sort((a, b) => a.distance - b.distance).slice(0, 15);
+  } catch {
+    return [];
+  }
 }

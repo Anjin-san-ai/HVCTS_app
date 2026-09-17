@@ -1,22 +1,11 @@
 import { useState, useEffect, useRef, useCallback } from 'react';
 import L from 'leaflet';
+import { formatCurrency } from './common';
+import { GDS_COLOURS } from '../config/gds';
+import { OVERPASS_MIRRORS } from '../config/api';
 
 // === GDS Colour Palette ===
-const GDS = {
-  red: '#d4351c',
-  blue: '#1d70b8',
-  purple: '#4c2c92',
-  green: '#00703c',
-  orange: '#f47738',
-  grey: '#b1b4b6',
-  darkBlue: '#003078',
-  white: '#ffffff',
-  black: '#0b0c0c',
-  lightGrey: '#f3f2f1',
-  midGrey: '#505a5f',
-  turquoise: '#28a197',
-  yellow: '#ffdd00',
-} as const;
+const GDS = GDS_COLOURS;
 
 // === Types ===
 interface SaleRecord { date: string; price: number; estateType: string; type: string; }
@@ -52,18 +41,21 @@ interface ResearchMapProps {
   subjectChanges?: ChangeRecord[];
   onComparableSelect?: (index: number) => void;
   selectedComparable?: number | null;
+  onAddComparable?: (comparable: { address: string; salePrice: number; saleDate: string; floorArea?: number; matchStrength: 'strong' | 'moderate' | 'weak'; source: 'manual' }) => void;
   onExpand?: () => void;
   mapHeight?: string;
+  compact?: boolean;
   dataLayers?: {
     floodRisk?: { riskLevel: string; floodAreas: Array<{ label: string; description: string }> };
     epcRatings?: Array<{ address: string; currentRating: string; currentScore: number; floorArea: string }>;
     crimeData?: { total: number; categories: Array<{ category: string; count: number }> };
     schools?: Array<{ name: string; type: string; distance: number; ofstedRating: string; lat: number; lng: number }>;
-    planning?: Array<{ reference: string; description: string; status: string; dateReceived: string; lat?: number; lng?: number }>;
+    planning?: Array<{ reference: string; description: string; status: string; dateReceived: string; lat?: number; lng?: number; type?: string }>;
+    transport?: Array<{ name: string; type: string; distance: number; lat: number; lng: number; line?: string }>;
   };
 }
 
-type LayerKey = 'comparables' | 'liveTransactions' | 'epc' | 'floodRisk' | 'schools' | 'planning' | 'buildings';
+type LayerKey = 'comparables' | 'liveTransactions' | 'epc' | 'floodRisk' | 'schools' | 'planning' | 'buildings' | 'transport';
 type BasemapKey = 'street' | 'satellite' | 'hybrid';
 
 // === Tile layer URLs ===
@@ -86,10 +78,6 @@ const BASEMAPS = {
 };
 
 // === Helpers ===
-
-function formatCurrency(amount: number): string {
-  return new Intl.NumberFormat('en-GB', { style: 'currency', currency: 'GBP', maximumFractionDigits: 0 }).format(amount);
-}
 
 function matchStrengthColor(strength?: 'strong' | 'moderate' | 'weak'): string {
   if (strength === 'strong') return GDS.green;
@@ -174,10 +162,7 @@ async function fetchBuildingFootprints(lat: number, lng: number, radiusM = 150):
   } catch { /* fall through to direct call */ }
 
   // 2. Direct browser call to Overpass mirrors (fallback if backend proxy unavailable)
-  const directEndpoints = [
-    'https://maps.mail.ru/osm/tools/overpass/api/interpreter',
-    'https://overpass-api.de/api/interpreter',
-  ];
+  const directEndpoints = [...OVERPASS_MIRRORS];
   for (const ep of directEndpoints) {
     try {
       const res = await fetch(ep, {
@@ -211,7 +196,49 @@ function pointInPolygon(lat: number, lng: number, polygon: Array<{ lat: number; 
   return inside;
 }
 
-function findSubjectBuilding(buildings: BuildingFootprint[], lat: number, lng: number): number {
+function extractHouseNumber(address: string): string {
+  const m = address.match(/^(?:Flat\s+\d+[a-zA-Z]?\s*,?\s*|Apartment\s+\d+[a-zA-Z]?\s*,?\s*|Unit\s+\d+[a-zA-Z]?\s*,?\s*)?(\d+[a-zA-Z]?)\b/i);
+  return m ? m[1].toUpperCase() : '';
+}
+
+function extractStreetName(address: string): string {
+  return address
+    .replace(/^(Flat\s+\d+[a-zA-Z]?\s*,?\s*|Apartment\s+\d+[a-zA-Z]?\s*,?\s*|Unit\s+\d+[a-zA-Z]?\s*,?\s*)?(\d+[a-zA-Z]?\s*,?\s*)/i, '')
+    .trim()
+    .toUpperCase();
+}
+
+function findSubjectBuilding(buildings: BuildingFootprint[], lat: number, lng: number, address?: string): number {
+  // 1. Try address-based matching first (works even when coordinates are postcode-level)
+  if (address) {
+    const houseNum = extractHouseNumber(address);
+    const street = extractStreetName(address);
+
+    if (houseNum) {
+      const addressMatches: number[] = [];
+      for (let i = 0; i < buildings.length; i++) {
+        const bNum = (buildings[i].tags['addr:housenumber'] || '').toUpperCase().trim();
+        if (bNum === houseNum) {
+          const bStreet = (buildings[i].tags['addr:street'] || '').toUpperCase().trim();
+          if (street && bStreet && bStreet === street) return i;
+          addressMatches.push(i);
+        }
+      }
+      if (addressMatches.length === 1) return addressMatches[0];
+      if (addressMatches.length > 1) {
+        let closest = addressMatches[0];
+        let closestDist = Infinity;
+        for (const idx of addressMatches) {
+          const c = buildingCentroid(buildings[idx]);
+          const d = (c.lat - lat) ** 2 + (c.lon - lng) ** 2;
+          if (d < closestDist) { closestDist = d; closest = idx; }
+        }
+        return closest;
+      }
+    }
+  }
+
+  // 2. Fall back to point-in-polygon (works when coordinates are building-level accurate)
   let bestIdx = -1;
   let bestArea = Infinity;
   for (let i = 0; i < buildings.length; i++) {
@@ -312,7 +339,7 @@ const popupStyles = {
   wrap: `font-family:Arial,sans-serif;font-size:12px;line-height:1.5;min-width:220px;max-width:320px;`,
   banner: (bg: string) => `background:${bg};color:#fff;padding:4px 10px;margin:-8px -20px 8px;font-weight:700;font-size:11px;letter-spacing:0.4px;`,
   section: `margin:6px 0 4px;font-weight:700;font-size:11px;color:${GDS.darkBlue};text-transform:uppercase;letter-spacing:0.4px;border-bottom:1px solid ${GDS.lightGrey};padding-bottom:2px;`,
-  row: `display:flex;justify-content:space-between;padding:2px 0;border-bottom:1px solid #f3f2f1;font-size:12px;`,
+  row: `display:flex;justify-content:space-between;padding:2px 0;border-bottom:1px solid ${GDS.lightGrey};font-size:12px;`,
   tag: (bg: string) => `display:inline-block;background:${bg};color:#fff;font-size:10px;font-weight:700;padding:1px 5px;border-radius:2px;margin-left:4px;`,
   muted: `color:${GDS.midGrey};font-size:11px;`,
   card: (border: string) => `margin:4px 0;padding:5px 8px;background:${GDS.lightGrey};border-left:3px solid ${border};`,
@@ -361,7 +388,7 @@ function buildSubjectPopup(
     h += `<div style="${popupStyles.section}">Planning / Changes (${changes.length})</div>`;
     for (const c of changes.slice(0, 3)) {
       const statusColor = c.status === 'completed' || c.status === 'approved' ? GDS.green : c.status === 'refused' ? GDS.red : GDS.orange;
-      h += `<div style="padding:2px 0;border-bottom:1px solid #f3f2f1;">`;
+      h += `<div style="padding:2px 0;border-bottom:1px solid ${GDS.lightGrey};">`;
       h += `<div style="display:flex;justify-content:space-between;"><span style="font-size:11px;color:${GDS.midGrey}">${c.date}</span><span style="${popupStyles.tag(statusColor)}">${c.status}</span></div>`;
       h += `<div style="font-size:11px;max-width:280px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">${c.description}</div>`;
       h += `</div>`;
@@ -469,13 +496,40 @@ function createComparableIcon(index: number, matchStrength?: 'strong' | 'moderat
   });
 }
 
-function createLiveTransactionIcon(): L.DivIcon {
+function createPriceLabelIcon(price: number, count: number): L.DivIcon {
+  const label = price >= 1_000_000 ? `£${(price / 1_000_000).toFixed(1)}m` : `£${Math.round(price / 1000)}k`;
   return L.divIcon({
     className: '',
-    html: `<div style="width:14px;height:14px;background:${GDS.purple};border:2px solid ${GDS.white};border-radius:50%;box-shadow:0 1px 4px rgba(0,0,0,0.25);"></div>`,
-    iconSize: [14, 14],
-    iconAnchor: [7, 7],
+    html: `<div style="background:${GDS.purple};color:${GDS.white};font-size:9px;font-weight:700;padding:1px 5px;white-space:nowrap;font-family:Arial,sans-serif;border:1px solid ${GDS.white};box-shadow:0 1px 3px rgba(0,0,0,0.3);">${label}${count > 1 ? ` (${count})` : ''}</div>`,
+    iconSize: [60, 16],
+    iconAnchor: [30, 8],
     popupAnchor: [0, -10],
+  });
+}
+
+function createTransportIcon(type: string): L.DivIcon {
+  const isTube = type === 'tube';
+  const bg = isTube ? GDS.red : GDS.darkBlue;
+  const letter = isTube ? 'T' : 'R';
+  return L.divIcon({
+    className: '',
+    html: `<div style="width:20px;height:20px;background:${bg};border:2px solid ${GDS.white};border-radius:${isTube ? '50%' : '3px'};display:flex;align-items:center;justify-content:center;font-size:10px;font-weight:700;color:${GDS.white};font-family:Arial,sans-serif;box-shadow:0 1px 4px rgba(0,0,0,0.25);">${letter}</div>`,
+    iconSize: [20, 20],
+    iconAnchor: [10, 10],
+    popupAnchor: [0, -12],
+  });
+}
+
+function createPlanningIcon(type: string): L.DivIcon {
+  const isListed = type === 'listed-building';
+  const bg = isListed ? GDS.orange : GDS.green;
+  const letter = isListed ? 'L' : 'C';
+  return L.divIcon({
+    className: '',
+    html: `<div style="width:20px;height:20px;background:${bg};border:2px solid ${GDS.white};border-radius:3px;display:flex;align-items:center;justify-content:center;font-size:10px;font-weight:700;color:${GDS.white};font-family:Arial,sans-serif;box-shadow:0 1px 4px rgba(0,0,0,0.25);">${letter}</div>`,
+    iconSize: [20, 20],
+    iconAnchor: [10, 10],
+    popupAnchor: [0, -12],
   });
 }
 
@@ -712,8 +766,10 @@ function ResearchMap({
   subjectChanges,
   onComparableSelect,
   selectedComparable,
+  onAddComparable,
   onExpand,
   mapHeight,
+  compact,
   dataLayers,
 }: ResearchMapProps) {
   const mapRef = useRef<HTMLDivElement>(null);
@@ -727,7 +783,10 @@ function ResearchMap({
   const schoolLayerRef = useRef<L.LayerGroup | null>(null);
   const planningLayerRef = useRef<L.LayerGroup | null>(null);
   const buildingLayerRef = useRef<L.LayerGroup | null>(null);
+  const transportLayerRef = useRef<L.LayerGroup | null>(null);
   const comparableMarkersRef = useRef<L.Marker[]>([]);
+  const subjectMarkerRef = useRef<L.Marker | null>(null);
+  const subjectCircleRef = useRef<L.Circle | null>(null);
 
   const [activeBasemap, setActiveBasemap] = useState<BasemapKey>('satellite');
   const [buildingCount, setBuildingCount] = useState(0);
@@ -736,12 +795,14 @@ function ResearchMap({
     liveTransactions: true,
     epc: false,
     floodRisk: false,
-    schools: false,
-    planning: false,
+    schools: true,
+    planning: true,
     buildings: true,
+    transport: true,
   });
   const [selectedParcels, setSelectedParcels] = useState<SelectedParcel[]>([]);
   const selectedIdsRef = useRef<Set<number>>(new Set());
+  const [confirmedIds, setConfirmedIds] = useState<Set<number>>(new Set());
   const [cardSections, setCardSections] = useState({ comparables: true, parcels: true, planning: false });
   const [overlayOpen, setOverlayOpen] = useState(true);
 
@@ -774,7 +835,7 @@ function ResearchMap({
     labelTileRef.current = labelTile;
 
     // Subject marker
-    L.marker([subjectProperty.lat, subjectProperty.lng], { icon: createSubjectIcon(), zIndexOffset: 1000 })
+    subjectMarkerRef.current = L.marker([subjectProperty.lat, subjectProperty.lng], { icon: createSubjectIcon(), zIndexOffset: 1000 })
       .addTo(map)
       .bindPopup(
         `<div style="font-family:Arial,sans-serif;font-size:13px;">
@@ -786,7 +847,7 @@ function ResearchMap({
       );
 
     // Comparable zone circle
-    L.circle([subjectProperty.lat, subjectProperty.lng], {
+    subjectCircleRef.current = L.circle([subjectProperty.lat, subjectProperty.lng], {
       radius: 500,
       color: GDS.turquoise,
       weight: 1.5,
@@ -801,8 +862,9 @@ function ResearchMap({
     comparableLayerRef.current = L.layerGroup().addTo(map);
     liveTransactionLayerRef.current = L.layerGroup().addTo(map);
     epcLayerRef.current = L.layerGroup();
-    schoolLayerRef.current = L.layerGroup();
-    planningLayerRef.current = L.layerGroup();
+    schoolLayerRef.current = L.layerGroup().addTo(map);
+    planningLayerRef.current = L.layerGroup().addTo(map);
+    transportLayerRef.current = L.layerGroup().addTo(map);
 
     mapInstance.current = map;
 
@@ -827,7 +889,10 @@ function ResearchMap({
       schoolLayerRef.current = null;
       planningLayerRef.current = null;
       buildingLayerRef.current = null;
+      transportLayerRef.current = null;
       comparableMarkersRef.current = [];
+      subjectMarkerRef.current = null;
+      subjectCircleRef.current = null;
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
@@ -874,19 +939,47 @@ function ResearchMap({
     baseTileRef.current.bringToBack();
   }, [activeBasemap]);
 
-  // Fetch and render building footprints
+  // Fetch building footprints (only when location changes)
+  const buildingsRef = useRef<BuildingFootprint[]>([]);
+
+  useEffect(() => {
+    let cancelled = false;
+    (async () => {
+      const result = await fetchBuildingFootprints(subjectProperty.lat, subjectProperty.lng, 150);
+      if (cancelled) return;
+      buildingsRef.current = result;
+      setBuildingCount(result.length);
+    })();
+    return () => {
+      cancelled = true;
+      buildingsRef.current = [];
+    };
+  }, [subjectProperty.lat, subjectProperty.lng]);
+
+  // Render building footprints (when buildings loaded or data props change)
   useEffect(() => {
     const layer = buildingLayerRef.current;
     if (!layer) return;
+    const buildings = buildingsRef.current;
+    if (buildings.length === 0) return;
 
-    let cancelled = false;
-    (async () => {
-      const buildings = await fetchBuildingFootprints(subjectProperty.lat, subjectProperty.lng, 150);
-      if (cancelled) return;
-      layer.clearLayers();
-      setBuildingCount(buildings.length);
+    layer.clearLayers();
 
-      const subjectIdx = findSubjectBuilding(buildings, subjectProperty.lat, subjectProperty.lng);
+    const subjectIdx = findSubjectBuilding(buildings, subjectProperty.lat, subjectProperty.lng, subjectProperty.address);
+
+      // If subject found by address match, reposition marker + circle + map to building centroid
+      if (subjectIdx >= 0) {
+        const subjectCentroid = buildingCentroid(buildings[subjectIdx]);
+        const distFromCenter = Math.abs(subjectCentroid.lat - subjectProperty.lat) + Math.abs(subjectCentroid.lon - subjectProperty.lng);
+        if (distFromCenter > 0.00005) {
+          const newLatLng = L.latLng(subjectCentroid.lat, subjectCentroid.lon);
+          if (subjectMarkerRef.current) subjectMarkerRef.current.setLatLng(newLatLng);
+          if (subjectCircleRef.current) subjectCircleRef.current.setLatLng(newLatLng);
+          if (mapInstance.current && distFromCenter > 0.0002) {
+            mapInstance.current.setView(newLatLng, mapInstance.current.getZoom());
+          }
+        }
+      }
 
       // Pre-compute all address matches
       const buildingMatches = new Map<number, TransactionMatch[]>();
@@ -1006,10 +1099,26 @@ function ResearchMap({
 
         polygon.bindPopup(popupHtml, { maxWidth: 340, maxHeight: 380 });
       });
-    })();
 
-    return () => { cancelled = true; };
-  }, [subjectProperty.lat, subjectProperty.lng, subjectProperty.address, subjectProperty.estimatedValue, subjectProperty.hvctsBand, liveTransactions, subjectSaleHistory, subjectOwnership, subjectChanges]);
+      // Price labels on matched buildings → LR transaction layer
+      const txLayer = liveTransactionLayerRef.current;
+      if (txLayer) {
+        txLayer.clearLayers();
+        buildings.forEach((b, bIdx) => {
+          if (bIdx === subjectIdx) return;
+          const txMatches = buildingMatches.get(bIdx) || [];
+          if (txMatches.length === 0) return;
+          const c = buildingCentroid(b);
+          const topPrice = Math.max(...txMatches.map(t => t.price));
+          L.marker([c.lat, c.lon], { icon: createPriceLabelIcon(topPrice, txMatches.length), zIndexOffset: 400 })
+            .addTo(txLayer)
+            .bindPopup(
+              `<div style="${popupStyles.wrap}"><div style="${popupStyles.banner(GDS.purple)}">LAND REGISTRY TRANSACTIONS</div>${txMatches.map(t => `<div style="${popupStyles.card(GDS.purple)}"><div style="display:flex;justify-content:space-between;"><strong>${formatCurrency(t.price)}</strong><span style="${popupStyles.muted}">${t.date}</span></div><div style="${popupStyles.muted}">${t.address}</div></div>`).join('')}</div>`,
+              { maxWidth: 300 },
+            );
+        });
+      }
+  }, [subjectProperty.lat, subjectProperty.lng, subjectProperty.address, subjectProperty.estimatedValue, subjectProperty.hvctsBand, liveTransactions, subjectSaleHistory, subjectOwnership, subjectChanges, buildingCount]);
 
   // Update comparable markers — only place markers for items with real coordinates
   useEffect(() => {
@@ -1035,24 +1144,6 @@ function ResearchMap({
       comparableMarkersRef.current.push(marker);
     });
   }, [comparables, selectedComparable, subjectProperty.lat, subjectProperty.lng, onComparableSelect]);
-
-  // Update live transaction markers
-  useEffect(() => {
-    const layer = liveTransactionLayerRef.current;
-    if (!layer) return;
-    layer.clearLayers();
-    liveTransactions.forEach((tx, idx) => {
-      const [lat, lng] = offsetPosition(subjectProperty.lat, subjectProperty.lng, idx, liveTransactions.length, 350);
-      L.marker([lat, lng], { icon: createLiveTransactionIcon() })
-        .addTo(layer)
-        .bindPopup(
-          `<div style="font-family:Arial,sans-serif;font-size:13px;">
-            <strong style="color:${GDS.purple};">Land Registry Transaction</strong><br/>${tx.address}<br/>${tx.postcode}<br/>
-            <strong>Price:</strong> ${formatCurrency(tx.price)}<br/><strong>Date:</strong> ${tx.date}
-          </div>`
-        );
-    });
-  }, [liveTransactions, subjectProperty.lat, subjectProperty.lng]);
 
   // Update EPC layer
   useEffect(() => {
@@ -1085,12 +1176,50 @@ function ResearchMap({
     });
   }, [dataLayers?.schools, subjectProperty.lat, subjectProperty.lng]);
 
-  // Planning layer — data is shown in the overlay card, not as map markers
+  // Planning layer — render listed buildings and conservation areas as markers
   useEffect(() => {
     const layer = planningLayerRef.current;
     if (!layer) return;
     layer.clearLayers();
+    const items = dataLayers?.planning;
+    if (!items?.length) return;
+    items.forEach((p) => {
+      if (!p.lat || !p.lng) return;
+      const pType = p.type || (p.description.toLowerCase().includes('listed') ? 'listed-building' : 'full');
+      L.marker([p.lat, p.lng], { icon: createPlanningIcon(pType) })
+        .addTo(layer)
+        .bindPopup(
+          `<div style="font-family:Arial,sans-serif;font-size:13px;">
+            <strong style="color:${GDS.darkBlue};">${p.description}</strong><br/>
+            <span style="font-size:11px;color:${GDS.midGrey};">${p.reference}</span><br/>
+            <strong>Status:</strong> <span style="color:${planningStatusColor(p.status)};font-weight:700;">${p.status}</span><br/>
+            ${p.dateReceived ? `<strong>Date:</strong> ${p.dateReceived}` : ''}
+          </div>`,
+        );
+    });
   }, [dataLayers?.planning]);
+
+  // Transport layer — tube and rail stations
+  useEffect(() => {
+    const layer = transportLayerRef.current;
+    if (!layer) return;
+    layer.clearLayers();
+    const stations = dataLayers?.transport;
+    if (!stations?.length) return;
+    stations.forEach((station) => {
+      if (!station.lat || !station.lng) return;
+      L.marker([station.lat, station.lng], { icon: createTransportIcon(station.type) })
+        .addTo(layer)
+        .bindPopup(
+          `<div style="font-family:Arial,sans-serif;font-size:13px;">
+            <strong style="color:${station.type === 'tube' ? GDS.red : GDS.darkBlue};">${station.name}</strong><br/>
+            <strong>Type:</strong> ${station.type === 'tube' ? 'Underground' : 'Rail'}<br/>
+            <strong>Distance:</strong> ${Math.round(station.distance)}m
+            ${station.line ? `<br/><strong>Line:</strong> ${station.line}` : ''}
+          </div>`,
+        );
+    });
+  }, [dataLayers?.transport]);
 
   // Toggle layer visibility
   useEffect(() => {
@@ -1103,6 +1232,7 @@ function ResearchMap({
       schools: schoolLayerRef.current,
       planning: planningLayerRef.current,
       buildings: buildingLayerRef.current,
+      transport: transportLayerRef.current,
     };
     (Object.keys(layerMap) as LayerKey[]).forEach((key) => {
       const layer = layerMap[key];
@@ -1116,13 +1246,16 @@ function ResearchMap({
   const hasFlood = !!dataLayers?.floodRisk;
   const hasSchools = (dataLayers?.schools?.length ?? 0) > 0;
   const hasPlanning = (dataLayers?.planning?.length ?? 0) > 0;
+  const hasTransport = (dataLayers?.transport?.length ?? 0) > 0;
 
   const layerOptions: Array<{ key: LayerKey; label: string; available: boolean }> = [
     { key: 'buildings', label: `Parcels (${buildingCount})`, available: true },
-    { key: 'liveTransactions', label: 'LR Transactions', available: true },
+    { key: 'liveTransactions', label: 'LR Prices', available: true },
+    { key: 'transport', label: `Transport (${dataLayers?.transport?.length ?? 0})`, available: hasTransport },
+    { key: 'schools', label: `Schools (${dataLayers?.schools?.length ?? 0})`, available: hasSchools },
+    { key: 'planning', label: `Heritage (${dataLayers?.planning?.length ?? 0})`, available: hasPlanning },
     { key: 'epc', label: 'EPC Ratings', available: hasEpc },
     { key: 'floodRisk', label: 'Flood Risk', available: hasFlood },
-    { key: 'schools', label: 'Schools', available: hasSchools },
   ];
 
   const showFloodBanner = activeLayers.floodRisk && dataLayers?.floodRisk;
@@ -1133,45 +1266,49 @@ function ResearchMap({
         <div ref={mapRef} style={{ height: '100%', width: '100%' }} />
 
         {/* Basemap switcher */}
-        <div style={styles.basemapSwitcher}>
-          {(['street', 'satellite', 'hybrid'] as BasemapKey[]).map((key) => (
-            <button
-              key={key}
-              style={styles.basemapBtn(activeBasemap === key)}
-              onClick={() => setActiveBasemap(key)}
-            >
-              {key === 'street' ? 'Street' : key === 'satellite' ? 'Satellite' : 'Hybrid'}
-            </button>
-          ))}
-        </div>
+        {!compact && (
+          <div style={styles.basemapSwitcher}>
+            {(['street', 'satellite', 'hybrid'] as BasemapKey[]).map((key) => (
+              <button
+                key={key}
+                style={styles.basemapBtn(activeBasemap === key)}
+                onClick={() => setActiveBasemap(key)}
+              >
+                {key === 'street' ? 'Street' : key === 'satellite' ? 'Satellite' : 'Hybrid'}
+              </button>
+            ))}
+          </div>
+        )}
 
         {/* Expand button */}
-        {onExpand && (
+        {onExpand && !compact && (
           <button className="cw-map-expand" onClick={onExpand} title="Open fullscreen map">
             <span style={{ fontSize: 14 }}>&#x26F6;</span> Expand map
           </button>
         )}
 
         {/* Layer toggle panel */}
-        <div style={styles.layerPanel}>
-          <div style={styles.layerTitle}>Data Layers</div>
-          {layerOptions
-            .filter((opt) => opt.available)
-            .map((opt) => (
-              <label key={opt.key} style={styles.layerToggle}>
-                <input
-                  type="checkbox"
-                  checked={activeLayers[opt.key]}
-                  onChange={() => toggleLayer(opt.key)}
-                  style={styles.layerCheckbox}
-                />
-                {opt.label}
-              </label>
-            ))}
-        </div>
+        {!compact && (
+          <div style={styles.layerPanel}>
+            <div style={styles.layerTitle}>Data Layers</div>
+            {layerOptions
+              .filter((opt) => opt.available)
+              .map((opt) => (
+                <label key={opt.key} style={styles.layerToggle}>
+                  <input
+                    type="checkbox"
+                    checked={activeLayers[opt.key]}
+                    onChange={() => toggleLayer(opt.key)}
+                    style={styles.layerCheckbox}
+                  />
+                  {opt.label}
+                </label>
+              ))}
+          </div>
+        )}
 
         {/* Overlay card — Comparables, Selected Parcels, Planning */}
-        {overlayOpen && (
+        {!compact && overlayOpen && (
           <div style={styles.overlayCard}>
             {/* Toggle card */}
             <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '4px 10px', borderBottom: `1px solid ${GDS.lightGrey}` }}>
@@ -1217,14 +1354,21 @@ function ResearchMap({
               <div>
                 {selectedParcels.length === 0 ? (
                   <div style={styles.overlayEmpty}>Click a turquoise building to select as comparable</div>
-                ) : selectedParcels.map(p => (
-                  <div key={p.buildingId} style={styles.overlayItem(true)}>
+                ) : selectedParcels.map(p => {
+                  const isConfirmed = confirmedIds.has(p.buildingId);
+                  const bestTx = p.transactions.length > 0 ? p.transactions.reduce((a, b) => new Date(b.date) > new Date(a.date) ? b : a) : null;
+                  return (
+                  <div key={p.buildingId} style={{ ...styles.overlayItem(true), borderLeft: isConfirmed ? `3px solid ${GDS.green}` : undefined }}>
                     <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-                      <span style={{ fontSize: 11, fontWeight: 600 }}>{p.label}</span>
+                      <span style={{ fontSize: 11, fontWeight: 600 }}>
+                        {isConfirmed && <span style={{ color: GDS.green, marginRight: 4 }}>✓</span>}
+                        {p.label}
+                      </span>
                       <button
                         onClick={(e) => {
                           e.stopPropagation();
                           selectedIdsRef.current.delete(p.buildingId);
+                          setConfirmedIds(prev => { const next = new Set(prev); next.delete(p.buildingId); return next; });
                           setSelectedParcels(prev => prev.filter(x => x.buildingId !== p.buildingId));
                         }}
                         style={{ background: 'none', border: 'none', cursor: 'pointer', fontSize: 12, color: GDS.red, padding: '0 2px' }}
@@ -1253,8 +1397,36 @@ function ResearchMap({
                         {p.transactions.length > 3 && <div style={{ color: GDS.midGrey }}>+{p.transactions.length - 3} more</div>}
                       </div>
                     )}
+                    {onAddComparable && bestTx && !isConfirmed && (
+                      <button
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          const priceDiff = Math.abs(bestTx.price - subjectProperty.estimatedValue) / subjectProperty.estimatedValue;
+                          const strength: 'strong' | 'moderate' | 'weak' = priceDiff < 0.3 ? 'strong' : priceDiff < 0.6 ? 'moderate' : 'weak';
+                          onAddComparable({
+                            address: bestTx.address || p.label,
+                            salePrice: bestTx.price,
+                            saleDate: bestTx.date,
+                            floorArea: p.areaSqft > 0 ? Math.round(p.areaSqft * 0.0929) : undefined,
+                            matchStrength: strength,
+                            source: 'manual',
+                          });
+                          setConfirmedIds(prev => new Set(prev).add(p.buildingId));
+                        }}
+                        className="govuk-button govuk-button--secondary"
+                        style={{ fontSize: 10, padding: '3px 8px 2px', margin: '4px 0 0', boxShadow: `0 1px 0 ${GDS.midGrey}` }}
+                      >
+                        ✓ Confirm as comparable
+                      </button>
+                    )}
+                    {isConfirmed && (
+                      <div style={{ fontSize: 9, color: GDS.green, fontWeight: 700, marginTop: 3, textTransform: 'uppercase', letterSpacing: '0.4px' }}>
+                        Added to comparables (Manual)
+                      </div>
+                    )}
                   </div>
-                ))}
+                  );
+                })}
               </div>
             )}
 
@@ -1284,7 +1456,7 @@ function ResearchMap({
         )}
 
         {/* Collapsed overlay toggle */}
-        {!overlayOpen && (
+        {!compact && !overlayOpen && (
           <button
             onClick={() => setOverlayOpen(true)}
             style={{ position: 'absolute', top: 48, left: 10, zIndex: 1000, background: 'rgba(255,255,255,0.95)', border: `1px solid ${GDS.grey}`, borderRadius: 4, padding: '5px 10px', fontSize: 11, fontWeight: 700, fontFamily: '"GDS Transport", Arial, sans-serif', cursor: 'pointer', boxShadow: '0 2px 6px rgba(0,0,0,0.15)', color: GDS.darkBlue }}
@@ -1295,14 +1467,14 @@ function ResearchMap({
         )}
 
         {/* Building count badge */}
-        {activeLayers.buildings && buildingCount > 0 && (
+        {!compact && activeLayers.buildings && buildingCount > 0 && (
           <div style={styles.buildingCount}>
             {buildingCount} building footprints · OpenStreetMap
           </div>
         )}
 
         {/* Flood risk banner */}
-        {showFloodBanner && (
+        {!compact && showFloodBanner && (
           <div style={styles.floodBanner}>
             Flood risk: {dataLayers!.floodRisk!.riskLevel}
             {dataLayers!.floodRisk!.floodAreas.length > 0 && (
@@ -1315,7 +1487,7 @@ function ResearchMap({
       </div>
 
       {/* Legend */}
-      <div style={styles.legend}>
+      {!compact && <div style={styles.legend}>
         <div style={styles.legendItem}>
           <div style={styles.legendSwatch(GDS.red)} />
           <span>Subject</span>
@@ -1350,11 +1522,26 @@ function ResearchMap({
         {hasSchools && activeLayers.schools && (
           <div style={styles.legendItem}><div style={styles.legendSwatch(GDS.darkBlue, 'square')} /><span>School</span></div>
         )}
+        {hasTransport && activeLayers.transport && (
+          <>
+            <div style={styles.legendItem}><div style={styles.legendSwatch(GDS.red)} /><span>Tube</span></div>
+            <div style={styles.legendItem}><div style={styles.legendSwatch(GDS.darkBlue, 'square')} /><span>Rail</span></div>
+          </>
+        )}
+        {hasPlanning && activeLayers.planning && (
+          <>
+            <div style={styles.legendItem}><div style={styles.legendSwatch(GDS.orange, 'square')} /><span>Listed</span></div>
+            <div style={styles.legendItem}><div style={styles.legendSwatch(GDS.green, 'square')} /><span>Conservation</span></div>
+          </>
+        )}
+        {activeLayers.liveTransactions && (
+          <div style={styles.legendItem}><div style={{ ...styles.legendSwatch(GDS.purple), borderRadius: '2px' }} /><span>LR Price</span></div>
+        )}
         <div style={styles.legendItem}>
           <div style={{ width: 14, height: 10, border: `1px dashed ${GDS.turquoise}`, borderRadius: '50%', opacity: 0.6, flexShrink: 0 }} />
           <span>500m zone</span>
         </div>
-      </div>
+      </div>}
     </div>
   );
 }

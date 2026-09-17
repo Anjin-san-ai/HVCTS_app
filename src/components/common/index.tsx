@@ -2,6 +2,7 @@ import { useState, useEffect, useRef } from 'react';
 import { Link } from 'react-router-dom';
 import type { ReactNode } from 'react';
 import L from 'leaflet';
+import { GDS_COLOURS } from '../../config/gds';
 
 // === Currency Formatter ===
 export function formatCurrency(amount: number): string {
@@ -67,7 +68,7 @@ export function PropertyMap({ lat, lng, label }: { lat: number; lng: number; lab
       maxZoom: 19,
       pane: 'overlayPane',
     }).addTo(map);
-    const icon = L.divIcon({ className: '', html: '<div style="width:24px;height:24px;background:#d4351c;border:3px solid white;border-radius:50%;box-shadow:0 2px 8px rgba(0,0,0,0.4);"></div>', iconSize: [24, 24], iconAnchor: [12, 12] });
+    const icon = L.divIcon({ className: '', html: `<div style="width:24px;height:24px;background:${GDS_COLOURS.red};border:3px solid white;border-radius:50%;box-shadow:0 2px 8px rgba(0,0,0,0.4);"></div>`, iconSize: [24, 24], iconAnchor: [12, 12] });
     const marker = L.marker([lat, lng], { icon }).addTo(map);
     if (label) marker.bindPopup(`<strong>${label}</strong>`).openPopup();
     mapInstance.current = map;
@@ -97,7 +98,7 @@ export function ToastContainer() {
     listeners.push(listener);
     return () => { listeners = listeners.filter((l) => l !== listener); };
   }, []);
-  const bgColors = { success: '#00703c', info: '#1d70b8', warning: '#f47738' };
+  const bgColors = { success: GDS_COLOURS.green, info: GDS_COLOURS.blue, warning: GDS_COLOURS.orange };
   return (
     <div style={{ position: 'fixed', bottom: 20, right: 20, zIndex: 9999, display: 'flex', flexDirection: 'column', gap: 10 }}>
       {toasts.map((t) => (
@@ -131,7 +132,7 @@ export function AiPanel({ icon, label, title, children, variant = 'default', sou
   }, [animate]);
 
   const variantClass = variant !== 'default' ? ` ai-panel--${variant}` : '';
-  const iconBg: Record<string, string> = { default: '#003078', warning: '#f47738', success: '#00703c', dlm: '#28a197' };
+  const iconBg: Record<string, string> = { default: GDS_COLOURS.darkBlue, warning: GDS_COLOURS.orange, success: GDS_COLOURS.green, dlm: GDS_COLOURS.turquoise };
 
   return (
     <div className={`ai-panel${variantClass}`}>
@@ -143,7 +144,7 @@ export function AiPanel({ icon, label, title, children, variant = 'default', sou
         </div>
       </div>
       <div className="ai-panel__body" style={{ opacity: revealed ? 1 : 0, transition: 'opacity 0.4s ease-in' }}>
-        {revealed ? children : <p style={{ color: '#505a5f' }}>Analysing property data<span className="typing-cursor">|</span></p>}
+        {revealed ? children : <p style={{ color: GDS_COLOURS.midGrey }}>Analysing property data<span className="typing-cursor">|</span></p>}
       </div>
       {source && <div className="ai-panel__source">{source}</div>}
       {cursor && !revealed && null}

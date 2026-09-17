@@ -1,33 +1,17 @@
-import { useState, useCallback, useMemo } from 'react';
+import { useState, useCallback } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { PageLayout } from '../../components/layout';
 import { AiPanel, Tag, formatCurrency } from '../../components/common';
-import { AIGovernancePanel } from '../../components/AIGovernancePanel';
 import { CASEWORKER_CASES, DASHBOARD_STATS } from '../../data/properties';
+import { GDS_COLOURS } from '../../config/gds';
 import { lookupPostcode, getNearbyHighValueSales } from '../../services/api';
 import { buildCaseFromTransaction } from '../../services/caseBuilder';
-import { applyAutoTriage, getTriageMethodology } from '../../services/triage';
-import type { LandRegistryTransaction, PostcodeResult, CaseworkerCase } from '../../types';
+import type { LandRegistryTransaction, PostcodeResult } from '../../types';
 
 export function DashboardPage() {
   const navigate = useNavigate();
   const stats = DASHBOARD_STATS;
   const [filter, setFilter] = useState<'all' | 'P1' | 'P2' | 'P3' | 'P4'>('all');
-  const [cases, setCases] = useState<CaseworkerCase[]>(() => applyAutoTriage(CASEWORKER_CASES));
-  const [detailRef, setDetailRef] = useState<string | null>(null);
-  const [showGovernance, setShowGovernance] = useState(false);
-
-  const activeCases = useMemo(() => cases.filter((c) => !c.autoTriaged), [cases]);
-  const autoResolvedCases = useMemo(() => cases.filter((c) => c.autoTriaged), [cases]);
-  const detailCase = useMemo(() => autoResolvedCases.find((c) => c.reference === detailRef) || null, [autoResolvedCases, detailRef]);
-  const methodology = useMemo(() => (detailCase ? getTriageMethodology(detailCase) : null), [detailCase]);
-
-  const handleReopen = useCallback((ref: string) => {
-    setCases((prev) => prev.map((c) =>
-      c.reference === ref ? { ...c, autoTriaged: false, autoTriageReason: undefined, status: 'in-progress' } : c,
-    ));
-    setDetailRef((current) => (current === ref ? null : current));
-  }, []);
 
   // Postcode search state
   const [searchPostcode, setSearchPostcode] = useState('');
@@ -37,8 +21,8 @@ export function DashboardPage() {
   const [searchError, setSearchError] = useState<string | null>(null);
 
   const filteredCases = filter === 'all'
-    ? activeCases
-    : activeCases.filter((c) => c.priority === filter);
+    ? CASEWORKER_CASES
+    : CASEWORKER_CASES.filter((c) => c.priority === filter);
 
   const handleCaseClick = (ref: string) => {
     navigate('/caseworker/case', { state: { caseRef: ref } });
@@ -82,32 +66,18 @@ export function DashboardPage() {
 
   return (
     <PageLayout wide>
-      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'baseline' }}>
-        <div>
-          <span className="govuk-caption-xl">HVCTS Operations</span>
-          <h1 className="govuk-heading-xl">Caseworker dashboard</h1>
-        </div>
-        <button
-          className="govuk-button govuk-button--secondary"
-          style={{ margin: 0 }}
-          onClick={() => setShowGovernance((v) => !v)}
-        >
-          {showGovernance ? 'Close AI Governance' : 'CW: AI Governance'}
-        </button>
-      </div>
-
-      <div className={showGovernance ? 'governance-split' : undefined}>
-      <div className={showGovernance ? 'governance-split__left' : undefined}>
+      <span className="govuk-caption-xl">HVCTS Operations</span>
+      <h1 className="govuk-heading-xl">Caseworker dashboard</h1>
 
       {/* Postcode Search */}
       <div style={{
         background: '#fff',
-        border: '2px solid #1d70b8',
+        border: `2px solid ${GDS_COLOURS.blue}`,
         padding: 20,
         marginBottom: 30,
       }}>
         <h2 className="govuk-heading-m" style={{ marginBottom: 8 }}>Property lookup</h2>
-        <p className="govuk-body-s" style={{ color: '#505a5f', marginBottom: 12 }}>
+        <p className="govuk-body-s" style={{ color: GDS_COLOURS.midGrey, marginBottom: 12 }}>
           Search any UK postcode to find HVCTS-eligible properties (£2M+) from Land Registry records
         </p>
         <div style={{ display: 'flex', gap: 8, alignItems: 'flex-start' }}>
@@ -143,7 +113,7 @@ export function DashboardPage() {
         </div>
 
         {searchError && (
-          <div style={{ marginTop: 12, padding: '10px 14px', background: '#fef7f7', borderLeft: '4px solid #d4351c', fontSize: 14 }}>
+          <div style={{ marginTop: 12, padding: '10px 14px', background: '#fef7f7', borderLeft: `4px solid ${GDS_COLOURS.red}`, fontSize: 14 }}>
             {searchError}
           </div>
         )}
@@ -154,11 +124,11 @@ export function DashboardPage() {
               <h3 className="govuk-heading-s" style={{ margin: 0 }}>
                 {searchResults.length} HVCTS-eligible propert{searchResults.length === 1 ? 'y' : 'ies'} in {searchPostcodeData?.postcode}
               </h3>
-              <span style={{ fontSize: 13, color: '#505a5f' }}>
+              <span style={{ fontSize: 13, color: GDS_COLOURS.midGrey }}>
                 {searchPostcodeData?.admin_district} · {searchPostcodeData?.region}
               </span>
             </div>
-            <div style={{ border: '1px solid #b1b4b6' }}>
+            <div style={{ border: `1px solid ${GDS_COLOURS.grey}` }}>
               {searchResults.map((tx, i) => {
                 const band = tx.price >= 20_000_000 ? 'H5' : tx.price >= 10_000_000 ? 'H4' : tx.price >= 5_000_000 ? 'H3' : tx.price >= 2_500_000 ? 'H2' : 'H1';
                 return (
@@ -167,23 +137,23 @@ export function DashboardPage() {
                     onClick={() => handleOpenDynamicCase(tx)}
                     style={{
                       padding: '12px 16px',
-                      borderBottom: i < searchResults.length - 1 ? '1px solid #f3f2f1' : 'none',
+                      borderBottom: i < searchResults.length - 1 ? `1px solid ${GDS_COLOURS.lightGrey}` : 'none',
                       cursor: 'pointer',
                       display: 'flex',
                       alignItems: 'center',
                       gap: 12,
                       transition: 'background 0.15s',
                     }}
-                    onMouseEnter={(e) => (e.currentTarget.style.background = '#f3f2f1')}
+                    onMouseEnter={(e) => (e.currentTarget.style.background = GDS_COLOURS.lightGrey)}
                     onMouseLeave={(e) => (e.currentTarget.style.background = 'transparent')}
                   >
                     <div style={{
                       width: 6, height: 40, borderRadius: 3, flexShrink: 0,
-                      background: band === 'H5' ? '#d4351c' : band === 'H4' ? '#f47738' : band === 'H3' ? '#ffdd00' : '#1d70b8',
+                      background: band === 'H5' ? GDS_COLOURS.red : band === 'H4' ? GDS_COLOURS.orange : band === 'H3' ? GDS_COLOURS.yellow : GDS_COLOURS.blue,
                     }} />
                     <div style={{ flex: 1 }}>
                       <div style={{ fontWeight: 700, fontSize: 15 }}>{tx.address}</div>
-                      <div style={{ fontSize: 13, color: '#505a5f' }}>
+                      <div style={{ fontSize: 13, color: GDS_COLOURS.midGrey }}>
                         {tx.postcode} · {tx.estateType} · {tx.propertyType || 'Unknown type'} · Sold {tx.date}
                       </div>
                     </div>
@@ -193,14 +163,14 @@ export function DashboardPage() {
                         Band {band}
                       </Tag>
                     </div>
-                    <div style={{ fontSize: 13, color: '#1d70b8', fontWeight: 700, flexShrink: 0, width: 80, textAlign: 'right' }}>
+                    <div style={{ fontSize: 13, color: GDS_COLOURS.blue, fontWeight: 700, flexShrink: 0, width: 80, textAlign: 'right' }}>
                       Open case &rsaquo;
                     </div>
                   </div>
                 );
               })}
             </div>
-            <p className="govuk-body-s" style={{ color: '#505a5f', marginTop: 8 }}>
+            <p className="govuk-body-s" style={{ color: GDS_COLOURS.midGrey, marginTop: 8 }}>
               Source: HM Land Registry Price Paid Data. Click any property to open as an HVCTS case with full AI analysis.
             </p>
           </div>
@@ -307,7 +277,7 @@ export function DashboardPage() {
             }}
             onClick={() => setFilter(f)}
           >
-            {f === 'all' ? `All (${activeCases.length})` : `${f} (${activeCases.filter((c) => c.priority === f).length})`}
+            {f === 'all' ? `All (${CASEWORKER_CASES.length})` : `${f} (${CASEWORKER_CASES.filter((c) => c.priority === f).length})`}
           </button>
         ))}
       </div>
@@ -346,127 +316,6 @@ export function DashboardPage() {
           </div>
         )}
       </div>
-
-      {/* Auto-triaged cases */}
-      <h2 className="govuk-heading-m" style={{ marginTop: 30 }}>
-        Auto-resolved by AI ({autoResolvedCases.length})
-      </h2>
-      <p className="govuk-body-s" style={{ color: 'var(--govuk-dark-grey)' }}>
-        Low-complexity cases the AI triaged, replied to, and closed automatically — no caseworker
-        review needed. Click a case to see how it was closed, or reopen it yourself.
-      </p>
-      <div style={{ border: '1px solid var(--govuk-mid-grey)' }}>
-        {autoResolvedCases.map((c) => (
-          <div key={c.reference} className="case-queue-item" onClick={() => setDetailRef(c.reference)}>
-            <div className="case-priority" style={{ background: 'var(--govuk-green)' }} />
-            <div className="case-queue-item__details" style={{ flex: 1 }}>
-              <div className="case-queue-item__ref">
-                {c.reference} — {c.property.address.line1}, {c.property.address.postcode}
-              </div>
-              <div className="case-queue-item__meta">
-                {c.challengeType} · {formatCurrency(c.property.estimatedValue)} · AI conf: {c.aiConfidence}%
-              </div>
-              {c.autoTriageReason && (
-                <div className="case-queue-item__meta" style={{ fontStyle: 'italic' }}>{c.autoTriageReason}</div>
-              )}
-            </div>
-            <Tag color="green">Auto-resolved</Tag>
-            <button
-              className="govuk-button govuk-button--secondary"
-              style={{ margin: '0 0 0 12px', fontSize: 13 }}
-              onClick={(e) => { e.stopPropagation(); handleReopen(c.reference); }}
-            >
-              Reopen
-            </button>
-          </div>
-        ))}
-        {autoResolvedCases.length === 0 && (
-          <div style={{ padding: 20, textAlign: 'center', color: 'var(--govuk-dark-grey)' }}>
-            No cases currently qualify for auto-triage.
-          </div>
-        )}
-      </div>
-
-      </div>
-      {showGovernance && (
-        <div className="governance-split__right">
-          <AIGovernancePanel />
-        </div>
-      )}
-      </div>
-
-      {detailCase && methodology && (
-        <div
-          role="dialog"
-          aria-modal="true"
-          style={{ position: 'fixed', inset: 0, background: 'rgba(11,12,12,0.6)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 1000 }}
-          onClick={() => setDetailRef(null)}
-        >
-          <div
-            style={{ background: '#fff', maxWidth: 640, width: '90%', maxHeight: '85vh', overflowY: 'auto', padding: 28, borderRadius: 4 }}
-            onClick={(e) => e.stopPropagation()}
-          >
-            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start' }}>
-              <div>
-                <span className="govuk-caption-m">{detailCase.reference}</span>
-                <h2 className="govuk-heading-m" style={{ margin: 0 }}>How this case was closed</h2>
-              </div>
-              <button className="govuk-button govuk-button--secondary" style={{ margin: 0, fontSize: 13 }} onClick={() => setDetailRef(null)}>
-                Close
-              </button>
-            </div>
-
-            <p className="govuk-body">
-              {detailCase.property.address.line1}, {detailCase.property.address.postcode} ·{' '}
-              {detailCase.challengeType} · {formatCurrency(detailCase.property.estimatedValue)}
-            </p>
-
-            <h3 className="govuk-heading-s">Auto-triage eligibility criteria</h3>
-            <table className="govuk-table">
-              <thead>
-                <tr>
-                  <th className="govuk-table__header">Criterion</th>
-                  <th className="govuk-table__header">Threshold</th>
-                  <th className="govuk-table__header">This case</th>
-                  <th className="govuk-table__header">Result</th>
-                </tr>
-              </thead>
-              <tbody>
-                {methodology.criteria.map((crit) => (
-                  <tr key={crit.label}>
-                    <td className="govuk-table__cell">{crit.label}</td>
-                    <td className="govuk-table__cell" style={{ fontSize: 14 }}>{crit.threshold}</td>
-                    <td className="govuk-table__cell" style={{ fontSize: 14 }}>{crit.actual}</td>
-                    <td className="govuk-table__cell">
-                      <Tag color={crit.met ? 'green' : 'red'}>{crit.met ? 'Pass' : 'Fail'}</Tag>
-                    </td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-
-            <h3 className="govuk-heading-s">Band threshold methodology</h3>
-            <p className="govuk-body-s">
-              Band <strong>{methodology.bandThreshold.band}</strong> covers{' '}
-              {formatCurrency(methodology.bandThreshold.min)} up to{' '}
-              {methodology.bandThreshold.max === Infinity ? 'unbounded' : formatCurrency(methodology.bandThreshold.max)},
-              carrying an annual surcharge of {formatCurrency(methodology.bandThreshold.surcharge)}. Band boundaries
-              are inclusive of the lower threshold, expressed at 1991 price levels per the HVCTS legislation.
-            </p>
-
-            <h3 className="govuk-heading-s">Closure summary</h3>
-            <p className="govuk-body-s">{methodology.narrative}</p>
-
-            <button
-              className="govuk-button"
-              style={{ marginTop: 8 }}
-              onClick={() => handleReopen(detailCase.reference)}
-            >
-              Reopen for caseworker review
-            </button>
-          </div>
-        </div>
-      )}
     </PageLayout>
   );
 }

@@ -1,12 +1,10 @@
 import type { PostcodeResult, LandRegistryTransaction } from '../types';
-
-const POSTCODES_API = 'https://api.postcodes.io';
-const LAND_REGISTRY_API = 'https://landregistry.data.gov.uk/data/ppi';
+import { API } from '../config/api';
 
 export async function lookupPostcode(postcode: string): Promise<PostcodeResult | null> {
   try {
     const encoded = encodeURIComponent(postcode.trim());
-    const res = await fetch(`${POSTCODES_API}/postcodes/${encoded}`);
+    const res = await fetch(`${API.postcodes}/postcodes/${encoded}`);
     if (!res.ok) return null;
     const data = await res.json();
     if (data.status !== 200) return null;
@@ -27,7 +25,7 @@ export async function lookupPostcode(postcode: string): Promise<PostcodeResult |
 export async function autocompletePostcode(partial: string): Promise<string[]> {
   try {
     const encoded = encodeURIComponent(partial.trim());
-    const res = await fetch(`${POSTCODES_API}/postcodes/${encoded}/autocomplete`);
+    const res = await fetch(`${API.postcodes}/postcodes/${encoded}/autocomplete`);
     if (!res.ok) return [];
     const data = await res.json();
     return data.result || [];
@@ -36,19 +34,7 @@ export async function autocompletePostcode(partial: string): Promise<string[]> {
   }
 }
 
-export async function validatePostcode(postcode: string): Promise<boolean> {
-  try {
-    const encoded = encodeURIComponent(postcode.trim());
-    const res = await fetch(`${POSTCODES_API}/postcodes/${encoded}/validate`);
-    if (!res.ok) return false;
-    const data = await res.json();
-    return data.result === true;
-  } catch {
-    return false;
-  }
-}
-
-export async function searchLandRegistry(params: {
+async function searchLandRegistry(params: {
   postcode?: string;
   street?: string;
   town?: string;
@@ -67,7 +53,7 @@ export async function searchLandRegistry(params: {
     if (params.minPrice) query.set('min-pricePaid', String(params.minPrice));
     if (params.maxPrice) query.set('max-pricePaid', String(params.maxPrice));
 
-    const res = await fetch(`${LAND_REGISTRY_API}/transaction-record.json?${query}`);
+    const res = await fetch(`${API.landRegistry}/transaction-record.json?${query}`);
     if (!res.ok) return [];
     const data = await res.json();
     const items = data?.result?.items || [];

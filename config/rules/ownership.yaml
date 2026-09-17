@@ -1,0 +1,43 @@
+# HVCTS Ownership & Liability Rules
+# ───────────────────────────────────
+# Determines who is liable for the surcharge based on ownership type.
+# Each type has a template that generates the citizen-facing explanation.
+
+version: "1.0"
+lastUpdated: "2028-04-01"
+
+ownershipTypes:
+  overseas-entity:
+    label: "Overseas entity"
+    liabilityRule: "Beneficial owner identified on Register of Overseas Entities"
+    explainerTemplate: >
+      You are liable for this surcharge because the property is held through {ownerEntity}.
+      Under HVCTS legislation, where a property is owned by an overseas company, the beneficial
+      owner identified on the Register of Overseas Entities is the liable person.
+      The ROE identifies {liableEntityShort} as the person with significant control.
+
+  trust:
+    label: "Trust"
+    liabilityRule: "Trustee(s) as registered with Trust Registration Service"
+    explainerTemplate: >
+      The surcharge is payable by the trustee of the trust that holds this property.
+      The Trust Registration Service identifies {liableEntity} as the responsible party.
+      Under HVCTS legislation, trustees are jointly and severally liable for the surcharge.
+
+  company:
+    label: "UK company"
+    liabilityRule: "Company entity itself is liable; PSC may have responsibilities"
+    explainerTemplate: >
+      This property is held by {ownerEntity}.
+      Under HVCTS, the company itself is liable for the surcharge.
+      The person(s) with significant control may also have responsibilities.
+
+  individual:
+    label: "Individual"
+    liabilityRule: "Registered owner(s) on Land Registry title"
+    explainerTemplate: >
+      As the registered owner{pluralSuffix} of this property,
+      {liableEntity} {pluralVerb} liable for the annual surcharge.
+
+# Escalation threshold: if ownership confidence is below this %, flag for specialist
+escalationThreshold: 50

@@ -1,0 +1,41 @@
+# HVCTS Band Thresholds & Surcharge Schedule
+# ────────────────────────────────────────────
+# Effective from 1 April 2028. Values at 1991 price levels.
+# Updated by Statutory Instrument — changes here propagate to
+# all valuation, classification, and decision logic automatically.
+
+version: "1.0"
+effectiveDate: "2028-04-01"
+priceLevelDate: "1991-04-01"
+jurisdiction: "England"
+
+bands:
+  H1:
+    min: 2000000
+    max: 2499999
+    surcharge: 3680
+    label: "Band H1"
+  H2:
+    min: 2500000
+    max: 4999999
+    surcharge: 18400
+    label: "Band H2"
+  H3:
+    min: 5000000
+    max: 9999999
+    surcharge: 36800
+    label: "Band H3"
+  H4:
+    min: 10000000
+    max: 19999999
+    surcharge: 73600
+    label: "Band H4"
+  H5:
+    min: 20000000
+    max: null  # unbounded
+    surcharge: 147200
+    label: "Band H5"
+
+# Band boundary rule: inclusive of lower threshold.
+# A property valued at exactly £2,500,000 falls into H2, not H1.
+boundaryRule: "inclusive-lower"
