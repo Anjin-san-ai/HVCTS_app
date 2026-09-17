@@ -33,7 +33,6 @@ function buildStateSummary(store: ReturnType<typeof useAppStore.getState>): stri
 
 export function ChatPage() {
   const navigate = useNavigate();
-  const setViewMode = useAppStore((s) => s.setViewMode);
   const selectedProperty = useAppStore((s) => s.selectedProperty);
   const selectProperty = useAppStore((s) => s.selectProperty);
   const setChallengeReason = useAppStore((s) => s.setChallengeReason);
@@ -135,7 +134,7 @@ export function ChatPage() {
     <PageLayout>
       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'baseline', marginBottom: 8 }}>
         <h1 className="govuk-heading-l">Challenge your HVCTS assessment — chat</h1>
-        <button className="govuk-button govuk-button--secondary" style={{ margin: 0 }} onClick={() => { setViewMode('form'); navigate('/'); }}>
+        <button className="govuk-button govuk-button--secondary" style={{ margin: 0 }} onClick={() => navigate('/')}>
           Switch to form view
         </button>
       </div>

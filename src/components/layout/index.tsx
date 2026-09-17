@@ -53,7 +53,6 @@ export function PrototypeNav() {
   const navigate = useNavigate();
   const persona = useAppStore((s) => s.persona);
   const setPersona = useAppStore((s) => s.setPersona);
-  const setViewMode = useAppStore((s) => s.setViewMode);
   const currentStep = new URLSearchParams(location.search).get('step') || '';
 
   // Keep the persona in step with the route, so a deep link or a browser Back
@@ -66,11 +65,9 @@ export function PrototypeNav() {
     if (persona !== implied) setPersona(implied);
   }, [location.pathname, persona, setPersona]);
 
-  // Selecting a group is what switches persona; the citizen group also keeps
-  // viewMode aligned so the header toggle and the jump bar agree.
+  // Selecting a group is what switches persona.
   const go = (next: Persona, path: string) => {
     setPersona(next);
-    if (next === 'citizen') setViewMode(path === '/chat' ? 'chat' : 'form');
     navigate(path);
   };
 
@@ -146,8 +143,6 @@ export function Header() {
   const location = useLocation();
   const isAuthenticated = useAuthStore((s) => s.isAuthenticated);
   const signOut = useAuthStore((s) => s.signOut);
-  const viewMode = useAppStore((s) => s.viewMode);
-  const setViewMode = useAppStore((s) => s.setViewMode);
 
   const handleSignOut = () => {
     signOut();
@@ -155,17 +150,13 @@ export function Header() {
     navigate('/login', { replace: true });
   };
 
-  const isCitizenRoute = CITIZEN_FORM_ROUTES.has(location.pathname) || location.pathname === '/chat';
+  const isChatView = location.pathname === '/chat';
+  const isCitizenRoute = CITIZEN_FORM_ROUTES.has(location.pathname) || isChatView;
 
-  const handleToggleView = () => {
-    if (viewMode === 'form') {
-      setViewMode('chat');
-      navigate('/chat');
-    } else {
-      setViewMode('form');
-      navigate('/');
-    }
-  };
+  // Derived from the route rather than held in state, so the label is right
+  // even when /chat is reached by deep link or the jump bar rather than by
+  // pressing this button.
+  const handleToggleView = () => navigate(isChatView ? '/' : '/chat');
 
   return (
     <header className="govuk-header">
@@ -178,7 +169,7 @@ export function Header() {
           <Link to="/">HVCTS Service</Link>
           {isAuthenticated && isCitizenRoute && (
             <button type="button" className="govuk-header__signout" onClick={handleToggleView} style={{ marginRight: 12 }}>
-              {viewMode === 'form' ? 'Try the chat assistant' : 'Switch to form view'}
+              {isChatView ? 'Switch to form view' : 'Try the chat assistant'}
             </button>
           )}
           {isAuthenticated && (

@@ -11,7 +11,6 @@ interface AppState {
   postcodeInfo: { district: string; region: string; lat: number; lng: number } | null;
   selectedProperty: Property | null;
   challenge: ChallengeState;
-  viewMode: 'form' | 'chat';
   /**
    * Which persona the prototype is being demonstrated as. Route-independent on
    * purpose: the RAIO-only AI Governance entry point has to react to the
@@ -28,7 +27,6 @@ interface AppState {
   addEvidence: (evidence: EvidenceItem) => void;
   removeEvidence: (id: string) => void;
   setChallengeNotes: (notes: string) => void;
-  setViewMode: (mode: 'form' | 'chat') => void;
   setPersona: (persona: Persona) => void;
   toggleComparable: (address: string) => void;
   submitChallenge: () => string;
@@ -51,7 +49,6 @@ export const useAppStore = create<AppState>((set, get) => ({
   postcodeInfo: null,
   selectedProperty: null,
   challenge: { ...INITIAL_CHALLENGE },
-  viewMode: 'form',
   persona: 'citizen',
 
   setSearchPostcode: (postcode) => set({ searchPostcode: postcode }),
@@ -76,8 +73,6 @@ export const useAppStore = create<AppState>((set, get) => ({
 
   setChallengeNotes: (notes) =>
     set((s) => ({ challenge: { ...s.challenge, notes } })),
-
-  setViewMode: (mode) => set({ viewMode: mode }),
 
   setPersona: (persona) => set({ persona }),
 

@@ -1,17 +1,45 @@
-import { useState, useCallback } from 'react';
+import { useState, useCallback, useMemo } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { PageLayout } from '../../components/layout';
 import { AiPanel, Tag, formatCurrency } from '../../components/common';
+import { AIGovernancePanel } from '../../components/AIGovernancePanel';
 import { CASEWORKER_CASES, DASHBOARD_STATS } from '../../data/properties';
 import { GDS_COLOURS } from '../../config/gds';
 import { lookupPostcode, getNearbyHighValueSales } from '../../services/api';
 import { buildCaseFromTransaction } from '../../services/caseBuilder';
-import type { LandRegistryTransaction, PostcodeResult } from '../../types';
+import { applyAutoTriage, getTriageMethodology } from '../../services/triage';
+import { useAppStore } from '../../stores/appStore';
+import type { LandRegistryTransaction, PostcodeResult, CaseworkerCase } from '../../types';
 
 export function DashboardPage() {
   const navigate = useNavigate();
   const stats = DASHBOARD_STATS;
   const [filter, setFilter] = useState<'all' | 'P1' | 'P2' | 'P3' | 'P4'>('all');
+  const [cases, setCases] = useState<CaseworkerCase[]>(() => applyAutoTriage(CASEWORKER_CASES));
+  const [detailRef, setDetailRef] = useState<string | null>(null);
+  const [showGovernance, setShowGovernance] = useState(false);
+
+  // The AI Governance panel is the RAIO persona's view of the estate, so the
+  // entry point only exists for that persona. Every other persona sees the
+  // dashboard unchanged.
+  const isRaio = useAppStore((s) => s.persona) === 'raio';
+
+  // Gate the panel itself on the persona too, not just its trigger. Switching
+  // away from RAIO while the panel was open would otherwise leave it on screen
+  // with no button left to close it.
+  const governanceOpen = isRaio && showGovernance;
+
+  const activeCases = useMemo(() => cases.filter((c) => !c.autoTriaged), [cases]);
+  const autoResolvedCases = useMemo(() => cases.filter((c) => c.autoTriaged), [cases]);
+  const detailCase = useMemo(() => autoResolvedCases.find((c) => c.reference === detailRef) || null, [autoResolvedCases, detailRef]);
+  const methodology = useMemo(() => (detailCase ? getTriageMethodology(detailCase) : null), [detailCase]);
+
+  const handleReopen = useCallback((ref: string) => {
+    setCases((prev) => prev.map((c) =>
+      c.reference === ref ? { ...c, autoTriaged: false, autoTriageReason: undefined, status: 'in-progress' } : c,
+    ));
+    setDetailRef((current) => (current === ref ? null : current));
+  }, []);
 
   // Postcode search state
   const [searchPostcode, setSearchPostcode] = useState('');
@@ -21,8 +49,8 @@ export function DashboardPage() {
   const [searchError, setSearchError] = useState<string | null>(null);
 
   const filteredCases = filter === 'all'
-    ? CASEWORKER_CASES
-    : CASEWORKER_CASES.filter((c) => c.priority === filter);
+    ? activeCases
+    : activeCases.filter((c) => c.priority === filter);
 
   const handleCaseClick = (ref: string) => {
     navigate('/caseworker/case', { state: { caseRef: ref } });
@@ -66,8 +94,24 @@ export function DashboardPage() {
 
   return (
     <PageLayout wide>
-      <span className="govuk-caption-xl">HVCTS Operations</span>
-      <h1 className="govuk-heading-xl">Caseworker dashboard</h1>
+      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'baseline' }}>
+        <div>
+          <span className="govuk-caption-xl">HVCTS Operations</span>
+          <h1 className="govuk-heading-xl">Caseworker dashboard</h1>
+        </div>
+        {isRaio && (
+          <button
+            className="govuk-button govuk-button--secondary"
+            style={{ margin: 0 }}
+            onClick={() => setShowGovernance((v) => !v)}
+          >
+            {showGovernance ? 'Close AI Governance' : 'CW: AI Governance'}
+          </button>
+        )}
+      </div>
+
+      <div className={governanceOpen ? 'governance-split' : undefined}>
+      <div className={governanceOpen ? 'governance-split__left' : undefined}>
 
       {/* Postcode Search */}
       <div style={{
@@ -316,6 +360,127 @@ export function DashboardPage() {
           </div>
         )}
       </div>
+
+      {/* Auto-triaged cases */}
+      <h2 className="govuk-heading-m" style={{ marginTop: 30 }}>
+        Auto-resolved by AI ({autoResolvedCases.length})
+      </h2>
+      <p className="govuk-body-s" style={{ color: 'var(--govuk-dark-grey)' }}>
+        Low-complexity cases the AI triaged, replied to, and closed automatically — no caseworker
+        review needed. Click a case to see how it was closed, or reopen it yourself.
+      </p>
+      <div style={{ border: '1px solid var(--govuk-mid-grey)' }}>
+        {autoResolvedCases.map((c) => (
+          <div key={c.reference} className="case-queue-item" onClick={() => setDetailRef(c.reference)}>
+            <div className="case-priority" style={{ background: 'var(--govuk-green)' }} />
+            <div className="case-queue-item__details" style={{ flex: 1 }}>
+              <div className="case-queue-item__ref">
+                {c.reference} — {c.property.address.line1}, {c.property.address.postcode}
+              </div>
+              <div className="case-queue-item__meta">
+                {c.challengeType} · {formatCurrency(c.property.estimatedValue)} · AI conf: {c.aiConfidence}%
+              </div>
+              {c.autoTriageReason && (
+                <div className="case-queue-item__meta" style={{ fontStyle: 'italic' }}>{c.autoTriageReason}</div>
+              )}
+            </div>
+            <Tag color="green">Auto-resolved</Tag>
+            <button
+              className="govuk-button govuk-button--secondary"
+              style={{ margin: '0 0 0 12px', fontSize: 13 }}
+              onClick={(e) => { e.stopPropagation(); handleReopen(c.reference); }}
+            >
+              Reopen
+            </button>
+          </div>
+        ))}
+        {autoResolvedCases.length === 0 && (
+          <div style={{ padding: 20, textAlign: 'center', color: 'var(--govuk-dark-grey)' }}>
+            No cases currently qualify for auto-triage.
+          </div>
+        )}
+      </div>
+
+      </div>
+      {governanceOpen && (
+        <div className="governance-split__right">
+          <AIGovernancePanel />
+        </div>
+      )}
+      </div>
+
+      {detailCase && methodology && (
+        <div
+          role="dialog"
+          aria-modal="true"
+          style={{ position: 'fixed', inset: 0, background: 'rgba(11,12,12,0.6)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 1000 }}
+          onClick={() => setDetailRef(null)}
+        >
+          <div
+            style={{ background: '#fff', maxWidth: 640, width: '90%', maxHeight: '85vh', overflowY: 'auto', padding: 28, borderRadius: 4 }}
+            onClick={(e) => e.stopPropagation()}
+          >
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start' }}>
+              <div>
+                <span className="govuk-caption-m">{detailCase.reference}</span>
+                <h2 className="govuk-heading-m" style={{ margin: 0 }}>How this case was closed</h2>
+              </div>
+              <button className="govuk-button govuk-button--secondary" style={{ margin: 0, fontSize: 13 }} onClick={() => setDetailRef(null)}>
+                Close
+              </button>
+            </div>
+
+            <p className="govuk-body">
+              {detailCase.property.address.line1}, {detailCase.property.address.postcode} ·{' '}
+              {detailCase.challengeType} · {formatCurrency(detailCase.property.estimatedValue)}
+            </p>
+
+            <h3 className="govuk-heading-s">Auto-triage eligibility criteria</h3>
+            <table className="govuk-table">
+              <thead>
+                <tr>
+                  <th className="govuk-table__header">Criterion</th>
+                  <th className="govuk-table__header">Threshold</th>
+                  <th className="govuk-table__header">This case</th>
+                  <th className="govuk-table__header">Result</th>
+                </tr>
+              </thead>
+              <tbody>
+                {methodology.criteria.map((crit) => (
+                  <tr key={crit.label}>
+                    <td className="govuk-table__cell">{crit.label}</td>
+                    <td className="govuk-table__cell" style={{ fontSize: 14 }}>{crit.threshold}</td>
+                    <td className="govuk-table__cell" style={{ fontSize: 14 }}>{crit.actual}</td>
+                    <td className="govuk-table__cell">
+                      <Tag color={crit.met ? 'green' : 'red'}>{crit.met ? 'Pass' : 'Fail'}</Tag>
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+
+            <h3 className="govuk-heading-s">Band threshold methodology</h3>
+            <p className="govuk-body-s">
+              Band <strong>{methodology.bandThreshold.band}</strong> covers{' '}
+              {formatCurrency(methodology.bandThreshold.min)} up to{' '}
+              {methodology.bandThreshold.max === Infinity ? 'unbounded' : formatCurrency(methodology.bandThreshold.max)},
+              carrying an annual surcharge of {formatCurrency(methodology.bandThreshold.surcharge)}. Band boundaries
+              are inclusive of the lower threshold, expressed at 1991 price levels per the HVCTS legislation.
+            </p>
+
+            <h3 className="govuk-heading-s">Closure summary</h3>
+            <p className="govuk-body-s">{methodology.narrative}</p>
+
+            <button
+              className="govuk-button"
+              style={{ marginTop: 8 }}
+              onClick={() => handleReopen(detailCase.reference)}
+            >
+              Reopen for caseworker review
+            </button>
+          </div>
+        </div>
+      )}
     </PageLayout>
   );
 }

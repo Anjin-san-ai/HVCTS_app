@@ -177,12 +177,14 @@ a:hover { color: var(--govuk-link-hover); }
 .prototype-nav__group--faded:hover .prototype-nav__btn,
 .prototype-nav__group--faded:hover .prototype-nav__label { opacity: 0.8; }
 .prototype-nav__label { font-size: 10px; font-weight: 700; text-transform: uppercase; letter-spacing: 0.08em; padding: 3px 7px; border-radius: 2px; color: #fff; line-height: 1; margin-right: 4px; flex-shrink: 0; }
+.prototype-nav__label--raio { background: #28a197; }
 .prototype-nav__label--citizen { background: #505a5f; }
 .prototype-nav__label--story { background: #4c2c92; }
 .prototype-nav__label--cw { background: #1d70b8; }
 .prototype-nav__btn { background: transparent; color: rgba(255,255,255,0.85); border: none; padding: 3px 8px; font-size: 11px; cursor: pointer; font-family: var(--govuk-font); border-radius: 3px; white-space: nowrap; }
 .prototype-nav__btn:hover { background: rgba(255,255,255,0.15); color: #fff; }
 .prototype-nav__btn--active { background: rgba(255,255,255,0.2); color: #fff; font-weight: 700; }
+.prototype-nav__btn--active.prototype-nav__btn--raio { background: #28a197; }
 .prototype-nav__btn--active.prototype-nav__btn--citizen { background: #505a5f; }
 .prototype-nav__btn--active.prototype-nav__btn--story { background: #4c2c92; }
 .prototype-nav__btn--active.prototype-nav__btn--cw { background: #1d70b8; }

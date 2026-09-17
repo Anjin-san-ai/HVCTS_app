@@ -492,3 +492,161 @@
   .cw-workspace__map-pane { width: 100%; position: relative; max-height: 400px; border-right: none; border-bottom: 1px solid var(--govuk-mid-grey); padding-right: 0; padding-bottom: 15px; margin-bottom: 15px; }
   .cw-workspace__data-pane { width: 100%; padding-left: 0; }
 }
+/* ─── AI Governance panel — scoped dark theme, does not touch --govuk-* ─── */
+
+.governance-split { display: grid; grid-template-columns: 1fr 1fr; gap: 0; align-items: start; }
+.governance-split__left { min-width: 0; max-height: calc(100vh - 120px); overflow-y: auto; padding-right: 16px; }
+.governance-split__right { min-width: 0; max-height: calc(100vh - 120px); overflow-y: auto; position: sticky; top: 0; }
+
+.ai-governance {
+  background: #0b0f14;
+  color: #eef2f6;
+  font-family: "GDS Transport", Arial, sans-serif;
+  padding: 16px;
+  border-radius: 6px;
+}
+
+.ai-governance__header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 10px;
+  padding-bottom: 12px;
+  border-bottom: 1px solid #1c2530;
+  margin-bottom: 12px;
+}
+
+.ai-governance__chip {
+  display: inline-block;
+  padding: 2px 8px;
+  border-radius: 4px;
+  background: #182028;
+  border: 1px solid #28323d;
+  font-size: 11px;
+  font-weight: 700;
+}
+
+.ai-governance__tabs { display: flex; gap: 4px; flex-wrap: wrap; margin-bottom: 16px; }
+.ai-governance__tab {
+  background: none; border: none; color: #8a97a6; font-size: 12px; font-weight: 600;
+  padding: 6px 10px; border-radius: 4px; cursor: pointer;
+}
+.ai-governance__tab--active { background: #182028; color: #2bd576; }
+.ai-governance__placeholder { color: #8a97a6; font-size: 13px; padding: 24px 0; text-align: center; }
+
+.ai-governance__card {
+  background: #12181f;
+  border: 1px solid #1c2530;
+  border-radius: 6px;
+  padding: 14px 16px;
+  margin-bottom: 14px;
+}
+
+.ai-governance__stat-row { display: grid; grid-template-columns: repeat(auto-fit, minmax(120px, 1fr)); gap: 10px; margin-bottom: 14px; }
+.ai-governance__stat { text-align: center; }
+.ai-governance__stat-value { font-size: 22px; font-weight: 700; color: #eef2f6; }
+.ai-governance__stat-label { font-size: 11px; color: #8a97a6; text-transform: uppercase; letter-spacing: 0.4px; margin-top: 4px; }
+.ai-governance__stat-sub { font-size: 11px; color: #5b6673; margin-top: 2px; }
+
+.ai-governance__two-col { display: grid; grid-template-columns: 1fr 1fr; gap: 14px; }
+.ai-governance__section-title { font-size: 12px; font-weight: 700; text-transform: uppercase; letter-spacing: 0.4px; color: #8a97a6; margin-bottom: 10px; }
+
+.ai-governance__pillar { padding: 8px 0; border-top: 1px solid #1c2530; }
+.ai-governance__pillar:first-of-type { border-top: none; }
+.ai-governance__bar { position: relative; height: 8px; background: #1c2530; border-radius: 4px; margin: 6px 0; overflow: hidden; }
+.ai-governance__bar-fill { position: absolute; inset: 0; background: #2bd576; border-radius: 4px; }
+.ai-governance__bar-value { position: absolute; right: 0; top: -16px; font-size: 11px; color: #8a97a6; }
+
+.ai-governance__agent-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); gap: 10px; }
+.ai-governance__agent-card { background: #182028; border: 1px solid #1c2530; border-radius: 6px; padding: 10px 12px; }
+
+.ai-governance__table { width: 100%; border-collapse: collapse; font-size: 13px; }
+.ai-governance__table th { text-align: left; color: #8a97a6; font-size: 11px; text-transform: uppercase; padding: 4px 6px; border-bottom: 1px solid #1c2530; }
+.ai-governance__table td { padding: 6px; border-bottom: 1px solid #1c2530; }
+.ai-governance__status-pass { color: #2bd576; font-weight: 700; font-size: 11px; }
+
+@media (max-width: 900px) {
+  .governance-split { grid-template-columns: 1fr; }
+  .governance-split__right { position: static; }
+  .ai-governance__two-col { grid-template-columns: 1fr; }
+}
+
+/* ─── Platform Agents — node graph ─── */
+
+.ai-governance__graph { position: relative; height: 420px; margin-top: 14px; }
+.ai-governance__graph-lines { position: absolute; inset: 0; width: 100%; height: 100%; }
+.ai-governance__node {
+  position: absolute;
+  transform: translate(-50%, -50%);
+  width: 128px;
+  background: #182028;
+  border: 1px solid #28323d;
+  border-radius: 6px;
+  padding: 6px 8px;
+  font-size: 11px;
+}
+.ai-governance__node span { font-size: 11px; }
+.ai-governance__node-count {
+  display: inline-flex; align-items: center; justify-content: center;
+  min-width: 16px; height: 16px; border-radius: 8px; background: #0b0f14;
+  font-size: 10px; font-weight: 700; padding: 0 4px; flex-shrink: 0;
+}
+.ai-governance__pill {
+  font-size: 10px; font-weight: 700; text-transform: uppercase; letter-spacing: 0.3px;
+  padding: 2px 6px; border-radius: 3px; background: #0b0f14; color: #8a97a6;
+}
+.ai-governance__pill--watch { color: #f4b740; background: rgba(244,183,64,0.12); }
+.ai-governance__pill--idle { color: #8a97a6; }
+
+/* ─── Agent Registry — list + detail ─── */
+
+.ai-governance__registry { display: grid; grid-template-columns: 220px 1fr; gap: 14px; margin-top: 12px; }
+.ai-governance__registry-list { display: flex; flex-direction: column; gap: 4px; }
+.ai-governance__registry-item {
+  text-align: left; background: none; border: 1px solid transparent; color: #c4ccd6;
+  font-size: 13px; padding: 8px 10px; border-radius: 4px; cursor: pointer;
+}
+.ai-governance__registry-item--active { background: #182028; border-color: #28323d; color: #2bd576; font-weight: 600; }
+.ai-governance__registry-detail { background: #182028; border: 1px solid #1c2530; border-radius: 6px; padding: 14px 16px; }
+.ai-governance__trust-box { margin-top: 12px; padding-top: 10px; border-top: 1px solid #1c2530; }
+
+@media (max-width: 900px) {
+  .ai-governance__registry { grid-template-columns: 1fr; }
+}
+
+/* ─── Human Review ─── */
+
+.ai-governance__review-item { background: #182028; border: 1px solid #1c2530; border-radius: 6px; padding: 14px; margin-top: 12px; }
+.ai-governance__conflict-box { background: #0b0f14; border-left: 3px solid #f4b740; padding: 10px 12px; font-size: 12px; color: #c4ccd6; border-radius: 0 4px 4px 0; }
+.ai-governance__hung-vote { margin-top: 10px; font-size: 12px; font-weight: 600; color: #eef2f6; background: #0b0f14; padding: 8px 12px; border-radius: 4px; }
+.ai-governance__vote-card { background: #0b0f14; border-left: 3px solid #8a97a6; border-radius: 0 4px 4px 0; padding: 8px 12px; }
+
+/* ─── Eval Trail ─── */
+
+.ai-governance__eval-category { font-size: 11px; font-weight: 700; text-transform: uppercase; letter-spacing: 0.4px; color: #5b6673; margin-bottom: 6px; }
+.ai-governance__eval-row {
+  display: flex; align-items: center; gap: 12px; flex-wrap: wrap;
+  padding: 8px 0; border-bottom: 1px solid #1c2530; font-size: 13px;
+}
+.ai-governance__switch {
+  width: 32px; height: 18px; border-radius: 9px; background: #28323d; border: none;
+  position: relative; cursor: pointer; flex-shrink: 0; padding: 0;
+}
+.ai-governance__switch--on { background: #1d70b8; }
+.ai-governance__switch-knob {
+  position: absolute; top: 2px; left: 2px; width: 14px; height: 14px; border-radius: 50%;
+  background: #eef2f6; transition: left 0.15s ease;
+}
+.ai-governance__switch--on .ai-governance__switch-knob { left: 16px; }
+.ai-governance__dot { display: inline-block; width: 6px; height: 6px; border-radius: 50%; background: #2bd576; }
+.ai-governance__dot--off { background: #f4b740; }
+.ai-governance__select {
+  background: #0b0f14; color: #eef2f6; border: 1px solid #28323d; border-radius: 4px;
+  font-size: 12px; padding: 3px 6px; min-width: 170px;
+}
+.ai-governance__icon-btn {
+  background: #0b0f14; border: 1px solid #28323d; color: #8a97a6; border-radius: 4px;
+  width: 24px; height: 24px; cursor: pointer; font-size: 12px;
+}
+.ai-governance__eval-description { flex-basis: 100%; font-size: 12px; color: #8a97a6; padding: 6px 0 0 44px; }
