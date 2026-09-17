@@ -130,8 +130,17 @@ export interface ChatIntakeUpdates {
   addDemoEvidence?: boolean;
 }
 
+export interface ChatIntakeClassification {
+  intent: ChallengeReason;
+  confidence: number;
+}
+
 export interface ChatIntakeData {
   reply: string;
+  /** The model's view of how far the conversation has got; drives the stepper. */
+  phase?: 'listen' | 'analyse' | 'evidence' | 'review' | 'submitted';
+  /** Sent once, on the turn the challenge type is first identified. */
+  classification?: ChatIntakeClassification;
   updates?: ChatIntakeUpdates;
   done?: boolean;
 }

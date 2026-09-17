@@ -980,3 +980,25 @@ a:hover { color: var(--govuk-link-hover); }
   .story-chat--expanded { width: calc(100vw - 16px); right: 8px; bottom: 8px; max-height: calc(100vh - 16px); max-width: none; }
   .story-fab { bottom: 12px; right: 12px; padding: 10px 16px; font-size: 14px; }
 }
+
+/* Full-page variant of the chat panel — Chat(alt) at /chat is a page in its
+   own right rather than the floating panel used inside the AI Citizen
+   journey, so it drops the fixed positioning and fills the content column. */
+.story-chat--page {
+  position: static;
+  width: 100%;
+  max-width: none;
+  max-height: none;
+  height: min(68vh, 720px);
+  right: auto;
+  bottom: auto;
+  z-index: auto;
+  box-shadow: none;
+  animation: none;
+}
+.story-chat--page .story-chat__messages { padding: 18px 20px; }
+.story-chat--page .story-chat__bubble { max-width: 76%; }
+
+@media (max-width: 480px) {
+  .story-chat--page { width: 100%; right: auto; bottom: auto; height: 70vh; }
+}

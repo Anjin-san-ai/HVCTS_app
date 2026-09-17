@@ -117,6 +117,9 @@ export interface ChatMessage {
   showUpload?: boolean;
   /** Renders the citizen's current evidence items as scored cards under this message. */
   showEvidenceCards?: boolean;
+  /** Renders this turn as a rich card rather than a plain bubble. */
+  card?: 'intent-card' | 'submission-card';
+  cardData?: Record<string, unknown>;
 }
 
 export interface PostcodeResult {
