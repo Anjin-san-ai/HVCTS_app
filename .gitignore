@@ -43,3 +43,17 @@ server/building-cache.json
 # swallow legitimate assets under src/assets and public/.
 .playwright-mcp/
 /*.png
+
+# Client-confidential working material. Kept on disk, deliberately out of git:
+# this repository is public, and these are engagement artefacts rather than
+# application code.
+/artifacts/
+/docs/legacy/
+
+# Reference screenshots the AI Governance panel was modelled on — design
+# inputs, not assets the app loads.
+/public/AIgovernance.png
+/public/Agents_registry.png
+/public/Human_review.png
+/public/Platform_agents_view.png
+/public/eval.png
