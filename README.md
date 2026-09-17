@@ -6,24 +6,41 @@ service for a new surcharge on English residential properties valued above
 owner**, not the occupier — which is what makes ownership resolution,
 valuation challenges, and evidence review the hard parts of this service.
 
-The app has two journeys:
+Everything sits behind a static sign-in screen (`/login`); the jump bar at the
+top of the window switches between four **personas**:
 
-- **Customer** (`/`, `/search`, `/results`, `/property`, `/liability`,
+- **RAIO** (Responsible AI Officer) — oversees the AI estate rather than
+  individual cases, and shares the caseworker routes. Selecting RAIO is the
+  only way to reveal the "CW: AI Governance" button described below; no other
+  persona sees it. Because RAIO and Caseworker share a route, the current
+  persona lives in the Zustand store rather than being derived from the URL.
+- **Citizen** (`/`, `/search`, `/results`, `/property`, `/liability`,
   `/challenge`, `/evidence`, `/review`, `/confirmation`) — a property owner
   searches their property, sees its HVCTS band and liability, and can
-  challenge the valuation with evidence. A "Try the chat assistant" toggle
-  in the header switches to `/chat`, an alternative conversational version
-  of the same journey (`src/pages/customer/ChatPage.tsx`) — it reads/writes
-  the same Zustand store as the form, so progress carries over either way.
+  challenge the valuation with evidence. "Chat (alt)" in the jump bar, or the
+  "Try the chat assistant" toggle in the header, switches to `/chat`: an
+  alternative conversational version of the same journey
+  (`src/pages/customer/ChatPage.tsx`) — it reads/writes the same Zustand store
+  as the form, so progress carries over either way.
+- **AI Citizen** (`/assessment`, with `?step=search|results|signin|view`) — an
+  AI-led retelling of the citizen journey as a single page driven by a step
+  machine (`src/pages/customer/PropertyStoryPage.tsx`). Adds a GOV.UK One Login
+  identity step, and the `view` step explains the assessment across three
+  sub-tabs: *Your property*, *How we valued it*, *Why you pay*. Its business
+  rules are externalised as YAML under `config/rules/`, loaded through
+  `src/config/ruleEngine.ts` and read via `src/domain/`.
 - **Caseworker** (`/caseworker`, `/caseworker/case`) — a VOA caseworker
   triages cases and gets AI-generated case briefs, desktop research,
   evidence assessment, decision recommendations, and draft decision letters.
-  The dashboard also runs a client-side auto-triage rule
-  (`src/services/triage.ts`) that closes low-complexity, high-AI-confidence
-  cases automatically — shown in a separate "Auto-resolved by AI" section,
-  reopenable by the caseworker.
+  Case detail is a six-tab workspace (AI Brief, Research, Evidence, Ownership,
+  Decision, Timeline) fronted by a six-gate human-in-the-loop bar — valuation,
+  comparables, ownership, band assessment, evidence review, final decision —
+  each approvable or overridable with a recorded reason. The dashboard also
+  runs a client-side auto-triage rule (`src/services/triage.ts`) that closes
+  low-complexity, high-AI-confidence cases automatically — shown in a separate
+  "Auto-resolved by AI" section, reopenable by the caseworker.
 
-  A "CW: AI Governance" button splits the dashboard into two panes: the
+  For the RAIO persona only, a "CW: AI Governance" button splits the dashboard into two panes: the
   normal dashboard on the left, and an AI trust/governance prototype view
   on the right (`src/components/AIGovernancePanel.tsx`,
   `src/components/governance/`). It's a visual mock, not a live monitoring
@@ -126,11 +143,20 @@ Full deployment configuration (Azure, GitHub Actions, secrets) is in
 ## Project structure
 
 ```
-server/            Express API — routes, security middleware, Azure OpenAI client, domain prompts
+server/            Express API — routers, security middleware, Azure OpenAI client, domain prompts
+  routes/           /api/ai, /api/companies (Companies House), /api/* proxies
+  agents/           Server-side agent orchestrator + 5 agents, behind /api/agent/*
+  security.ts       CORS allowlist, SWA principal check, per-caller + global AI rate limit
+config/rules/      Externalised YAML business rules (bands, intents, responses, challenge types,
+                   ownership, gov services, journey phases)
 src/
   pages/LoginPage   Static demo sign-in gate (see caveats below)
-  pages/customer/   9-step customer journey, plus ChatPage.tsx (conversational alternative)
-  pages/caseworker/ Dashboard (incl. auto-triage section + AI Governance split view) + case detail
+  pages/customer/   9-step citizen journey, ChatPage.tsx (conversational alternative),
+                     PropertyStoryPage.tsx (the AI Citizen /assessment journey)
+  pages/caseworker/ Dashboard (incl. auto-triage section + RAIO-only AI Governance split view) + case detail
+  domain/           Journey, intent, challenge, ownership and signposting rules read from config/rules/
+  hooks/            useChat (citizen conversation), useGates (HITL gate state)
+  agents/           Client-side agent orchestration types
   components/       ResearchMap (Leaflet), layout (Header/Footer/Nav, view-mode toggle), common, RequireAuth,
                      AIGovernancePanel.tsx + governance/ (Platform Agents, Agent Registry, Human Review, Eval Trail)
   services/         llm.ts (backend AI calls, incl. chat-intake), api.ts + publicData.ts (public UK data), triage.ts (auto-triage rule)
